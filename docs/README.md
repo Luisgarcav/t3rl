@@ -25,6 +25,8 @@ Everything below is for maintainers. Setup lives in the [root README](../README.
 policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../AGENTS.md).
 
 - [Architecture overview](./internals/overview.md)
+- [T3RL research lab proposal](./internals/rl-lab.md)
+- [T3RL phased development plan](./internals/rl-lab-roadmap.md)
 - [Workspace layout](./internals/workspace-layout.md)
 - [Glossary](./internals/glossary.md)
 - [Scripts](./internals/scripts.md)
