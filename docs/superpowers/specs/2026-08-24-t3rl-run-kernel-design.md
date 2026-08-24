@@ -269,8 +269,9 @@ Migration `041_RlRuns.ts` follows the idempotent style of `033_ProjectionThreads
 - **`rl_run_artifacts`** — opaque `artifact_id` to run-relative path, plus kind, byte size, content
   type, and produced timestamp.
 
-Deleting a run deletes its rows and its directory under `<stateDir>/rl/`. Retention policy and
-quotas are deferred, but the directory layout is chosen so that a future sweeper needs no index.
+This increment ships no way to delete a run: retention and quotas are deferred rather than
+half-built. The layout is chosen so a future sweeper needs no index — a run's rows key on `run_id`
+and its bytes live under one directory named for it.
 
 ## Artifacts and security
 
