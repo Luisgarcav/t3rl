@@ -98,7 +98,6 @@ export const decodeWorkerLine = (line: string): RlWorkerDecodeResult => {
 
   let parsed: unknown;
   try {
-    // @effect-diagnostics-next-line preferSchemaOverJson:off - untrusted child-process stdout.
     parsed = JSON.parse(line);
   } catch {
     return failure("MalformedWorkerMessage", "worker line was not valid JSON");

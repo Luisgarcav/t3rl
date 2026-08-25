@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - path assertions need the real separator.
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
