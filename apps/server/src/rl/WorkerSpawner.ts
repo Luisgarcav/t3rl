@@ -83,6 +83,7 @@ const makeWorkerSpawner = Effect.gen(function* () {
   return WorkerSpawner.of({
     spawn: (input) =>
       Effect.gen(function* () {
+        const spawnScope = yield* Effect.scope;
         const handle = yield* spawner
           .spawn(
             ChildProcess.make(input.command, input.args, {
@@ -107,8 +108,16 @@ const makeWorkerSpawner = Effect.gen(function* () {
           // Signals go to the handle captured above, never to a process found
           // by name or argv: the worker carries this worktree's path in its
           // command line exactly as the developer's own agent does.
+          //
+          // Deliberately does not await the platform's kill, which resolves
+          // only once the child has actually exited. Awaiting it would hang on
+          // exactly the case escalation exists for: a worker that ignores
+          // SIGTERM would block the caller before it could ever send SIGKILL.
           kill: (signal: WorkerSignal) =>
-            handle.kill({ killSignal: signal }).pipe(Effect.orElseSucceed(() => undefined)),
+            Effect.forkIn(
+              handle.kill({ killSignal: signal }).pipe(Effect.orElseSucceed(() => undefined)),
+              spawnScope,
+            ).pipe(Effect.asVoid),
         } satisfies WorkerProcess;
       }),
   });

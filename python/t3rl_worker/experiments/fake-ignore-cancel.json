@@ -1,0 +1,9 @@
+{
+  "experimentId": "fake-ignore-cancel",
+  "runnerId": "fake",
+  "instrumentationLevel": "minimal",
+  "defaultSeed": 7,
+  "entrypoint": "python/t3rl_worker/fake_worker.py",
+  "scenario": "ignore-cancel",
+  "config": {}
+}
