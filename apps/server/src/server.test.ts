@@ -120,6 +120,8 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as RlManager from "./rl/Manager.ts";
+import * as RlRunStore from "./rl/RunStore.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
@@ -766,6 +768,14 @@ const buildAppUnderTest = (options?: {
             retain: Effect.void,
             registerTerminalProcesses: () => Effect.void,
             unregisterTerminal: () => Effect.void,
+          }),
+          Layer.mock(RlManager.RlManager)({
+            capabilities: () => Effect.succeed({ runners: [] }),
+            list: () => Effect.succeed({ runs: [] }),
+            sweepInterruptedRuns: () => Effect.succeed(0),
+          }),
+          Layer.mock(RlRunStore.RunStore)({
+            findArtifact: () => Effect.succeed(null),
           }),
         ),
       ),
