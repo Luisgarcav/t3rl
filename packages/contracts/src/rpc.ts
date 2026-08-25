@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
@@ -191,6 +192,18 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  RlArtifactMetadata,
+  RlCapabilityReport,
+  RlExperimentId,
+  RlResolvedManifest,
+  RlRunId,
+  RlRunNotFoundError,
+  RlRunStartError,
+  RlRunState,
+  RlRunSummary,
+  RlSubscriptionEvent,
+} from "./rl.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -302,7 +315,15 @@ export const WS_METHODS = {
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
 
+  // RL lab methods
+  rlCapabilities: "rl.capabilities",
+  rlListRuns: "rl.listRuns",
+  rlGetRun: "rl.getRun",
+  rlStartRun: "rl.startRun",
+  rlCancelRun: "rl.cancelRun",
+
   // Streaming subscriptions
+  rlSubscribeRun: "rl.subscribeRun",
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
@@ -982,6 +1003,56 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+export const WsRlCapabilitiesRpc = Rpc.make(WS_METHODS.rlCapabilities, {
+  payload: Schema.Struct({}),
+  success: RlCapabilityReport,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsRlListRunsRpc = Rpc.make(WS_METHODS.rlListRuns, {
+  payload: Schema.Struct({
+    projectId: TrimmedNonEmptyString,
+    limit: Schema.optional(
+      Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(Schema.isLessThanOrEqualTo(200)),
+    ),
+  }),
+  success: Schema.Struct({ runs: Schema.Array(RlRunSummary) }),
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsRlGetRunRpc = Rpc.make(WS_METHODS.rlGetRun, {
+  payload: Schema.Struct({ runId: RlRunId }),
+  success: Schema.Struct({
+    summary: RlRunSummary,
+    manifest: Schema.NullOr(RlResolvedManifest),
+    artifacts: Schema.Array(RlArtifactMetadata),
+  }),
+  error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlStartRunRpc = Rpc.make(WS_METHODS.rlStartRun, {
+  payload: Schema.Struct({
+    projectId: TrimmedNonEmptyString,
+    experimentId: RlExperimentId,
+    seed: Schema.Int,
+  }),
+  success: Schema.Struct({ runId: RlRunId }),
+  error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlCancelRunRpc = Rpc.make(WS_METHODS.rlCancelRun, {
+  payload: Schema.Struct({ runId: RlRunId }),
+  success: Schema.Struct({ state: RlRunState }),
+  error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlSubscribeRunRpc = Rpc.make(WS_METHODS.rlSubscribeRun, {
+  payload: Schema.Struct({ runId: RlRunId }),
+  success: RlSubscriptionEvent,
+  error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1082,4 +1153,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsRlCapabilitiesRpc,
+  WsRlListRunsRpc,
+  WsRlGetRunRpc,
+  WsRlStartRunRpc,
+  WsRlCancelRunRpc,
+  WsRlSubscribeRunRpc,
 );

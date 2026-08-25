@@ -44,6 +44,11 @@ import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as RlCapabilities from "./rl/Capabilities.ts";
+import * as RlExperiments from "./rl/Experiments.ts";
+import * as RlManager from "./rl/Manager.ts";
+import * as RlRunStore from "./rl/RunStore.ts";
+import * as RlWorkerSpawner from "./rl/WorkerSpawner.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -327,6 +332,21 @@ const TerminalLayerLive = TerminalManager.layer.pipe(
   Layer.provide(PortScannerLayerLive),
 );
 
+/**
+ * The RL lab. Experiment definitions ship in the repository, so the catalog
+ * directory is resolved relative to this module rather than to the user's
+ * project or the process working directory.
+ */
+const RL_EXPERIMENTS_DIR = new URL("../../../python/t3rl_worker/experiments", import.meta.url)
+  .pathname;
+
+const RlLayerLive = RlManager.RlManagerLive.pipe(
+  Layer.provide(RlWorkerSpawner.WorkerSpawnerLive),
+  Layer.provide(RlCapabilities.CapabilitiesLive.pipe(Layer.provide(ProcessRunner.layer))),
+  Layer.provide(RlExperiments.layerFromDirectory(RL_EXPERIMENTS_DIR)),
+  Layer.provideMerge(RlRunStore.RunStoreLive),
+);
+
 const PreviewLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PreviewManager.layer),
   Layer.provideMerge(PortScannerLayerLive),
@@ -376,7 +396,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, RlLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),

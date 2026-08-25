@@ -35,7 +35,7 @@ not when its feature list has been partially implemented.
 - Python algorithms and environments remain replaceable runner implementations.
 - CPU-only `CartPole-v1` is sufficient to validate the first execution boundary.
 - Experiment definitions are version-controlled; generated run artifacts are environment-local.
-- Run lifecycle facts are event-sourced; high-volume metrics are not.
+- Run lifecycle facts are durable but not event-sourced; high-volume metrics are neither.
 - Upstream T3 Code continues to change and must remain practical to integrate.
 - No phase silently installs Python, native packages, CUDA, or framework dependencies.
 
@@ -55,6 +55,13 @@ contracts           PPO + CartPole             2A evidence and debugging
 
 ## Phase 0: decisions and executable contracts
 
+> **Status: implemented** as the run kernel — contracts, pure lifecycle, worker protocol, artifact
+> confinement, storage, host boundary, supervision, and a deterministic Python fake worker, reachable
+> over six RPC methods. Design and reasoning:
+> [run kernel design](../superpowers/specs/2026-08-24-t3rl-run-kernel-design.md).
+> Deliverables below that remain open: the checked-in PPO/`CartPole-v1` definition (the shipped
+> catalog holds fake-worker definitions only) and artifact retention.
+
 ### Goal
 
 Remove the architectural uncertainty that would otherwise be expensive to reverse after data and
@@ -63,8 +70,10 @@ process lifecycles exist.
 ### Deliverables
 
 - Architecture decisions for:
-  - RL lifecycle ownership in the current orchestration aggregate or a sibling event-sourced domain;
-  - authorization for starting and cancelling project-controlled training;
+  - RL lifecycle ownership — **settled**: a manager with an in-place projection, not an event-sourced
+    domain. See [the run kernel design](../superpowers/specs/2026-08-24-t3rl-run-kernel-design.md);
+  - authorization for starting and cancelling project-controlled training — **settled**: `rl.*`
+    reuses the existing orchestration scopes so no paired device has to re-pair;
   - environment-local artifact storage, quotas, retention, and cleanup;
   - Python executable discovery and environment fingerprinting;
   - worker protocol versioning and compatibility;

@@ -57,6 +57,9 @@ import {
   type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
+  AssetRlArtifactNotFoundError,
+  RlRunNotFoundError,
+  type RlSubscriptionEvent,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
@@ -85,6 +88,8 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as RlManager from "./rl/Manager.ts";
+import * as RlRunStore from "./rl/RunStore.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
@@ -368,6 +373,8 @@ const makeWsRpcLayer = (
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
+      const rlManager = yield* RlManager.RlManager;
+      const rlRunStore = yield* RlRunStore.RunStore;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -1861,6 +1868,23 @@ const makeWsRpcLayer = (
               if (input.resource._tag === "attachment") {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
+              if (input.resource._tag === "rl-artifact") {
+                // The run's artifact row is the only source for the path; the
+                // client supplies opaque ids and never names a file.
+                const artifact = yield* rlRunStore
+                  .findArtifact({
+                    runId: input.resource.runId,
+                    artifactId: input.resource.artifactId,
+                  })
+                  .pipe(Effect.orElseSucceed(() => null));
+                if (artifact === null) {
+                  return yield* new AssetRlArtifactNotFoundError({ resource: input.resource });
+                }
+                return yield* issueAssetUrl({
+                  resource: input.resource,
+                  rlArtifactRelativePath: artifact.relativePath,
+                });
+              }
               if (input.resource._tag === "project-favicon") {
                 const project = yield* projectionSnapshotQuery
                   .getActiveProjectByWorkspaceRoot(input.resource.cwd)
@@ -2038,6 +2062,39 @@ const makeWsRpcLayer = (
             WS_METHODS.reviewGetDiffFileContents,
             review.getDiffFileContents(input),
             { "rpc.aggregate": "review" },
+          ),
+        [WS_METHODS.rlCapabilities]: () =>
+          observeRpcEffect(WS_METHODS.rlCapabilities, rlManager.capabilities(), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlListRuns]: (input) =>
+          observeRpcEffect(WS_METHODS.rlListRuns, rlManager.list(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlGetRun]: (input) =>
+          observeRpcEffect(WS_METHODS.rlGetRun, rlManager.get(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlStartRun]: (input) =>
+          observeRpcEffect(WS_METHODS.rlStartRun, rlManager.start(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlCancelRun]: (input) =>
+          observeRpcEffect(WS_METHODS.rlCancelRun, rlManager.cancel(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlSubscribeRun]: (input) =>
+          observeRpcStream(
+            WS_METHODS.rlSubscribeRun,
+            Stream.callback<RlSubscriptionEvent, RlRunNotFoundError>((queue) =>
+              Effect.acquireRelease(
+                rlManager.subscribe(input, (event) => {
+                  Queue.offerUnsafe(queue, event);
+                }),
+                (unsubscribe) => Effect.sync(unsubscribe),
+              ),
+            ),
+            { "rpc.aggregate": "rl" },
           ),
         [WS_METHODS.terminalOpen]: (input) =>
           observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {

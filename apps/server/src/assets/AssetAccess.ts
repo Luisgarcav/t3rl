@@ -1,4 +1,4 @@
-import type { AssetResource } from "@t3tools/contracts";
+import { AssetRlArtifactNotFoundError, type AssetResource } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
   AssetPreviewTypeValidationError,
@@ -39,6 +39,7 @@ import {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as RlArtifacts from "../rl/Artifacts.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
@@ -79,6 +80,13 @@ const AssetClaimsSchema = Schema.Union([
     version: Schema.Literal(1),
     kind: Schema.Literal("attachment"),
     attachmentId: Schema.String,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("rl-artifact"),
+    runId: Schema.String,
+    relativePath: Schema.String,
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -170,6 +178,12 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
+  /**
+   * Run-relative path for an `rl-artifact` resource, looked up by the caller
+   * from the run's artifact row. Passed in rather than resolved here so the
+   * asset layer stays independent of the RL domain.
+   */
+  readonly rlArtifactRelativePath?: string;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -276,6 +290,21 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         expiresAt,
       };
       fileName = path.basename(attachmentPath);
+      break;
+    }
+    case "rl-artifact": {
+      const relativePath = input.rlArtifactRelativePath;
+      if (relativePath === undefined) {
+        return yield* new AssetRlArtifactNotFoundError({ resource: input.resource });
+      }
+      claims = {
+        version: 1,
+        kind: "rl-artifact",
+        runId: input.resource.runId,
+        relativePath,
+        expiresAt,
+      };
+      fileName = path.basename(relativePath);
       break;
     }
     case "project-favicon": {
@@ -408,6 +437,25 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
+
+  if (claims.kind === "rl-artifact") {
+    const config = yield* ServerConfig.ServerConfig;
+    // Confinement is re-checked here, not trusted from the claim: a signed
+    // token is a capability, not a licence to leave the run directory.
+    const artifactPath = RlArtifacts.resolveArtifactPath({
+      rlRunsDir: config.rlRunsDir,
+      runId: claims.runId,
+      relativePath: claims.relativePath,
+    });
+    if (artifactPath === null) return null;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const info = yield* optionOnNotFound(fileSystem.stat(artifactPath)).pipe(
+      Effect.orElseSucceed(() => Option.none()),
+    );
+    return Option.isSome(info) && info.value.type === "File"
+      ? ({ kind: "file", path: artifactPath } satisfies ResolvedAsset)
+      : null;
+  }
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;

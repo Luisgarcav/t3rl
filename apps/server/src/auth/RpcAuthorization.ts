@@ -29,6 +29,15 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
+  // rl.* deliberately reuses the orchestration scopes rather than adding new
+  // literals: scopes are frozen per session at pairing time, so a new scope
+  // would force every paired device to re-pair. See the run kernel design, D2.
+  [WS_METHODS.rlCapabilities]: AuthOrchestrationReadScope,
+  [WS_METHODS.rlListRuns]: AuthOrchestrationReadScope,
+  [WS_METHODS.rlGetRun]: AuthOrchestrationReadScope,
+  [WS_METHODS.rlSubscribeRun]: AuthOrchestrationReadScope,
+  [WS_METHODS.rlStartRun]: AuthOrchestrationOperateScope,
+  [WS_METHODS.rlCancelRun]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationOperateScope,

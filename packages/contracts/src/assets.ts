@@ -13,6 +13,12 @@ export const AssetResource = Schema.Union([
   Schema.TaggedStruct("attachment", {
     attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
   }),
+  // Opaque ids only. The server resolves the on-disk path from the run's
+  // artifact row and re-checks confinement; a client never names a path.
+  Schema.TaggedStruct("rl-artifact", {
+    runId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+    artifactId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  }),
   Schema.TaggedStruct("project-favicon", {
     cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     // A cache-key hint only. The server reads the authoritative path from the
@@ -187,6 +193,17 @@ export class AssetSigningKeyLoadError extends Schema.TaggedErrorClass<AssetSigni
   }
 }
 
+export class AssetRlArtifactNotFoundError extends Schema.TaggedErrorClass<AssetRlArtifactNotFoundError>()(
+  "AssetRlArtifactNotFoundError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return "RL run artifact was not found.";
+  }
+}
+
 export const AssetAccessError = Schema.Union([
   AssetWorkspaceContextNotFoundError,
   AssetWorkspaceContextResolutionError,
@@ -197,6 +214,7 @@ export const AssetAccessError = Schema.Union([
   AssetWorkspaceAssetNotFoundError,
   AssetWorkspaceResolutionError,
   AssetAttachmentNotFoundError,
+  AssetRlArtifactNotFoundError,
   AssetProjectFaviconResolutionError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,

@@ -1,7 +1,9 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
+import { AssetResource } from "./assets.ts";
 import { RlArtifactMetadata, RlMetricBatch, RlRunState, RlRunSummary } from "./rl.ts";
+import { WS_METHODS } from "./rpc.ts";
 
 function decodes<S extends Schema.Top>(schema: S, input: unknown): boolean {
   try {
@@ -102,5 +104,22 @@ describe("RlRunSummary", () => {
       errorMessage: null,
     };
     expect(decodes(RlRunSummary, input)).toBe(true);
+  });
+});
+
+describe("RL RPC surface", () => {
+  it("declares the six run kernel methods", () => {
+    expect(WS_METHODS.rlCapabilities).toBe("rl.capabilities");
+    expect(WS_METHODS.rlListRuns).toBe("rl.listRuns");
+    expect(WS_METHODS.rlGetRun).toBe("rl.getRun");
+    expect(WS_METHODS.rlStartRun).toBe("rl.startRun");
+    expect(WS_METHODS.rlCancelRun).toBe("rl.cancelRun");
+    expect(WS_METHODS.rlSubscribeRun).toBe("rl.subscribeRun");
+  });
+
+  it("accepts an rl-artifact asset resource", () => {
+    expect(
+      decodes(AssetResource, { _tag: "rl-artifact", runId: "run_01", artifactId: "art_01" }),
+    ).toBe(true);
   });
 });

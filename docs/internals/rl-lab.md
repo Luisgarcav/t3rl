@@ -157,22 +157,32 @@ part of the manifest.
 ## Run lifecycle
 
 ```text
-requested → preparing → running → completed
-                         │   │
-                         │   ├────────→ failed
-                         │   └─→ cancelling → cancelled
-                         └────────────→ failed
+requested ──▶ preparing ──▶ running ──▶ cancelling
+                                │            │
+                                ▼            ▼
+                          completed      cancelled
+                             failed
+
+any active state ──(server restart)──▶ interrupted
+any active state ──────(error)───────▶ failed
 ```
 
 - `requested`: durable intent exists, but no process has started.
 - `preparing`: the server is resolving capabilities, paths, and the immutable manifest.
 - `running`: the worker handshake succeeded and training is active.
 - `cancelling`: cancellation was accepted and process shutdown is in progress.
-- `completed`, `failed`, and `cancelled`: terminal states with an explicit reason or result.
+- `completed`, `failed`, `cancelled`, and `interrupted`: terminal states with an explicit reason or
+  result.
 
-Start and cancel commands are idempotent. A disconnected client does not affect the process. For the
-first vertical slice, a server restart marks an active run as interrupted and therefore `failed`;
-process adoption and checkpoint resume are later capabilities.
+`interrupted` is deliberately distinct from `failed`. A run whose server died has an unknown outcome,
+and reporting it as a failure would fabricate a scientific claim about a trajectory nobody observed.
+
+The first terminal fact wins: a worker that finishes on its own before a pending cancellation reaches
+it records the result it reported, not `cancelled`.
+
+Starting a run always yields a fresh run id — a deliberate retry is a second run, which is correct
+for research. Cancelling a terminal run succeeds without effect. A disconnected client does not
+affect the process. Process adoption and checkpoint resume after a restart are later capabilities.
 
 ## Contracts and persistence
 
@@ -612,10 +622,14 @@ Expected ownership follows existing repository boundaries:
 packages/contracts/src/rl.ts           client/server schemas and RPC contracts
 packages/client-runtime/src/rl/        shared connection-backed run state
 apps/server/src/rl/                    lifecycle, supervision, persistence, artifacts
-apps/web/src/features/rl/              desktop/web lab interface
+apps/web/src/rl/                       desktop/web lab interface
 apps/mobile/src/features/rl/           initial read-only surface
 python/t3rl_worker/                    versioned worker and SB3 runner
+python/t3rl_worker/experiments/        version-controlled experiment definitions
 ```
+
+`apps/web/src` has no `features/` directory: it is organised flat with per-domain folders such as
+`terminal/` and `browser/`, and the lab surface should follow that shape.
 
 Exact filenames should follow adjacent code when implementation begins. The Python worker is not a
 Node workspace package and must not leak Python framework types into `packages/contracts`.
@@ -650,15 +664,22 @@ backend-specific concepts to the client.
 
 ## Decisions required before implementation
 
-The first implementation change should settle these choices with focused prototypes:
+The run kernel increment settled the first two. Full reasoning lives in
+[the run kernel design](../superpowers/specs/2026-08-24-t3rl-run-kernel-design.md).
 
-- whether RL lifecycle events extend the current orchestration aggregate or use a sibling
-  event-sourced domain with the same persistence guarantees;
-- how the development worker environment is provisioned without turning capability detection into
-  implicit package installation;
-- which existing authorization scope, if any, correctly represents starting project-controlled
-  training code;
-- the retention limit and explicit cleanup behavior for environment-local run artifacts.
+- **Settled (D1).** Run lifecycle lives in a manager with an in-place projection, modelled on
+  `apps/server/src/terminal/Manager.ts` — not in the orchestration aggregate and not in a sibling
+  event-sourced domain. A run changes state about six times and has exactly one writer, so a
+  decider, projector, and reactors would be machinery with no load to carry. Adding a transition log
+  later is additive.
+- **Settled (D2).** `rl.*` reuses `orchestration:read` and `orchestration:operate` rather than
+  introducing scope literals. Scopes are frozen per session in `auth_sessions.scopes`, so a new one
+  would force every paired device to re-pair, and a client that can dispatch an orchestration command
+  already runs arbitrary code on the server.
+- **Open.** How the development worker environment is provisioned without turning capability
+  detection into implicit package installation.
+- **Open.** The retention limit and explicit cleanup behavior for environment-local run artifacts.
+  The kernel ships no way to delete a run, so this stays deferred rather than half-built.
 
 These decisions affect persistence, security, and distribution. Algorithm catalogs, visual design,
 and distributed execution do not need to be settled before the vertical slice begins.
