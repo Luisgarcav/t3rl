@@ -53,6 +53,7 @@ interface EditorLaunch {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly requiresTerminal: boolean;
+  readonly workingDirectory?: string;
 }
 
 interface ProcessLaunch {
@@ -246,8 +247,16 @@ function appleScriptString(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-function macosTerminalScript(editorCommand: string, editorArgs: ReadonlyArray<string>): string {
-  const shellCommand = `exec ${[editorCommand, ...editorArgs].map(shellQuotePosix).join(" ")}`;
+function macosTerminalScript(
+  editorCommand: string,
+  editorArgs: ReadonlyArray<string>,
+  workingDirectory?: string,
+): string {
+  const editorShellCommand = `exec ${[editorCommand, ...editorArgs].map(shellQuotePosix).join(" ")}`;
+  const shellCommand =
+    workingDirectory === undefined
+      ? editorShellCommand
+      : `cd -- ${shellQuotePosix(workingDirectory)} && ${editorShellCommand}`;
   return [
     'tell application "Terminal"',
     "activate",
@@ -462,13 +471,21 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
       yield* resolveAvailableCommand(editorDef.commands, env),
       () => editorDef.commands[0],
     );
+    const opensNeovimProject =
+      editorDef.id === "neovim" &&
+      (yield* Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const info = yield* fileSystem.stat(input.cwd).pipe(Effect.orElseSucceed(() => null));
+        return info?.type === "Directory";
+      }));
     return {
       editor: editorDef.id,
       label: editorDef.label,
       target: input.cwd,
       command,
-      args: resolveEditorArgs(editorDef, input.cwd),
+      args: opensNeovimProject ? ["."] : resolveEditorArgs(editorDef, input.cwd),
       requiresTerminal: "requiresTerminal" in editorDef && editorDef.requiresTerminal === true,
+      ...(opensNeovimProject ? { workingDirectory: input.cwd } : {}),
     };
   }
 
@@ -564,10 +581,19 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
     command = terminalCommand;
     switch (terminal.value.kind) {
       case "macos-terminal":
-        args = ["-e", macosTerminalScript(editorCommand, launch.args)];
+        args = ["-e", macosTerminalScript(editorCommand, launch.args, launch.workingDirectory)];
         break;
       case "windows-terminal":
-        args = ["new-tab", "--title", launch.label, editorCommand, ...launch.args];
+        args = [
+          "new-tab",
+          "--title",
+          launch.label,
+          ...(launch.workingDirectory === undefined
+            ? []
+            : ["--startingDirectory", launch.workingDirectory]),
+          editorCommand,
+          ...launch.args,
+        ];
         break;
       case "argv":
         args = [...terminal.value.argsBeforeCommand, editorCommand, ...launch.args];
@@ -586,6 +612,7 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
+        ...(launch.workingDirectory === undefined ? {} : { cwd: launch.workingDirectory }),
       },
     },
     (cause) =>

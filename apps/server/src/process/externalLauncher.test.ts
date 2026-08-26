@@ -187,6 +187,43 @@ it.effect("launches Helix and Neovim in an installed terminal emulator", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("starts Neovim from the project root when opening a directory", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-neovim-project-" });
+    const ghosttyPath = path.join(binDir, "ghostty");
+    const neovimPath = path.join(binDir, "nvim");
+    const projectPath = path.join(binDir, "project");
+    yield* fileSystem.makeDirectory(projectPath);
+    for (const executablePath of [ghosttyPath, neovimPath]) {
+      yield* fileSystem.writeFileString(executablePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(executablePath, 0o755);
+    }
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({ editor: "neovim", cwd: projectPath });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: binDir },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.ok(spawned);
+    assert.equal(spawned.command, ghosttyPath);
+    assert.deepEqual(spawned.args, ["-e", neovimPath, "."]);
+    assert.equal(spawned.options.cwd, projectPath);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("only discovers terminal editors when a terminal emulator is installed", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
