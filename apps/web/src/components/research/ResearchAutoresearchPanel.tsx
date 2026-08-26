@@ -38,7 +38,6 @@ import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import {
   Select,
@@ -102,10 +101,10 @@ function ResearchAutoresearchEditor(props: {
   readonly onOpenSpecialists: () => void;
   readonly onSave: (document: ResearchWorkspaceDocument) => Promise<string | null>;
 }) {
-  const [document, setDocument] = useState(props.initialDocument);
-  const [seedText, setSeedText] = useState(document.studyDraft.seeds.join(", "));
+  const [document, setDocument] = useState(() => props.initialDocument);
+  const [seedText, setSeedText] = useState(() => props.initialDocument.studyDraft.seeds.join(", "));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [error, setError] = useState<string | null>(props.parseError);
+  const [error, setError] = useState<string | null>(() => props.parseError);
   const runs = useEnvironmentQuery(
     rlEnvironment.runs({
       environmentId: props.environmentId,
@@ -237,6 +236,7 @@ function ResearchAutoresearchEditor(props: {
 
   const runOptions = runs.data?.runs ?? [];
   const baselineValue = baselineRunId ?? NO_BASELINE_VALUE;
+  const selectedProfileIds = new Set(document.studyDraft.specialistProfileIds);
 
   return (
     <div className="@container/autoresearch flex min-h-0 flex-1 flex-col bg-background">
@@ -629,7 +629,7 @@ function ResearchAutoresearchEditor(props: {
             </div>
             <div className="grid gap-2 @[32rem]/autoresearch:grid-cols-2">
               {document.profiles.map((profile) => {
-                const checked = document.studyDraft.specialistProfileIds.includes(profile.id);
+                const checked = selectedProfileIds.has(profile.id);
                 const disabled =
                   !checked &&
                   document.studyDraft.specialistProfileIds.length >= RESEARCH_MAX_SELECTED_PROFILES;
@@ -637,20 +637,29 @@ function ResearchAutoresearchEditor(props: {
                   <Tooltip key={profile.id}>
                     <TooltipTrigger
                       render={
-                        <label
+                        <button
+                          aria-pressed={checked}
                           className={`flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 ${
                             disabled
                               ? "cursor-not-allowed opacity-50"
                               : "cursor-pointer hover:bg-accent/40"
                           }`}
+                          disabled={disabled}
+                          type="button"
+                          onClick={() => toggleProfile(profile.id, !checked)}
                         />
                       }
                     >
-                      <Checkbox
-                        checked={checked}
-                        disabled={disabled}
-                        onCheckedChange={(value) => toggleProfile(profile.id, value === true)}
-                      />
+                      <span
+                        aria-hidden
+                        className={`flex size-4 shrink-0 items-center justify-center rounded-[.2rem] border ${
+                          checked
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background"
+                        }`}
+                      >
+                        {checked ? <CheckIcon className="size-3" strokeWidth={3} /> : null}
+                      </span>
                       <span className="min-w-0 truncate text-sm font-medium">{profile.name}</span>
                     </TooltipTrigger>
                     <TooltipPopup side="top">{profile.summary}</TooltipPopup>

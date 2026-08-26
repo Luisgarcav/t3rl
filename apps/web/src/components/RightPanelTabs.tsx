@@ -510,6 +510,7 @@ function RightPanelEmptyState(props: {
     <div
       ref={focusOnMount}
       tabIndex={0}
+      role="group"
       onKeyDown={handleKeyDown}
       aria-label="Open a surface"
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}

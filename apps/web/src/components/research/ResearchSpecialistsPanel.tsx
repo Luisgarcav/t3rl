@@ -69,12 +69,12 @@ function ResearchSpecialistsEditor(props: {
   readonly onOpenAutoresearch: () => void;
   readonly onSave: (document: ResearchWorkspaceDocument) => Promise<string | null>;
 }) {
-  const [document, setDocument] = useState(props.initialDocument);
+  const [document, setDocument] = useState(() => props.initialDocument);
   const [selectedProfileId, setSelectedProfileId] = useState<ResearchAgentProfileId | null>(
     document.profiles[0]?.id ?? null,
   );
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [error, setError] = useState<string | null>(props.parseError);
+  const [error, setError] = useState<string | null>(() => props.parseError);
   const selectedProfile =
     document.profiles.find((profile) => profile.id === selectedProfileId) ??
     document.profiles[0] ??
