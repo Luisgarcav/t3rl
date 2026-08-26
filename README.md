@@ -170,19 +170,24 @@ browser access removes only the `preview_*` tools and does not disable the RL to
 
 ## Architecture
 
-```text
-Electron / web client                         Coding agents
-  RL Lab, visualizers, comparison, diagnostics  Codex, Claude, Cursor, Grok, OpenCode
-                         |                         |
-                         | authenticated RPC       | project-scoped rl_* tools
-                         v                         v
-Node server
-  lifecycle, persistence, process supervision, artifact authorization
-                         |
-                         | versioned NDJSON worker protocol
-                         v
-Python worker
-  Gymnasium + Stable-Baselines3, metrics, model, evaluation artifacts
+```mermaid
+flowchart TB
+    subgraph control["Control surfaces"]
+        direction LR
+        clients["Web & desktop clients<br/>RL Lab · Visualizers · Compare · Diagnostics"]
+        agents["Coding agents<br/>Codex · Claude · Cursor · Grok · OpenCode"]
+    end
+
+    subgraph execution["Execution plane"]
+        direction TB
+        server["Node server — execution authority<br/>Lifecycle · Persistence · Process supervision · Artifact authorization"]
+        worker["Python worker<br/>Gymnasium · Stable-Baselines3 · Metrics · Models · Evaluation artifacts"]
+
+        server <-->|"Versioned NDJSON protocol"| worker
+    end
+
+    clients <-->|"Authenticated typed RPC"| server
+    agents <-->|"Project-scoped rl_* tools"| server
 ```
 
 The server owns execution. The client renders authoritative state, and the Python worker stays
