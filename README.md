@@ -1,120 +1,196 @@
-# T3 Code
+# t3RL
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+**An open, agent-assisted control plane for reproducible reinforcement learning research.**
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
-
-## "Wait, what are you selling me?"
-
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
-
-## Installation
+t3RL brings experiment execution, live evidence, run comparison, diagnostics, and coding agents
+into one desktop workspace. It builds on [T3 Code](https://github.com/pingdotgg/t3code), preserving
+its fast, remote-ready agent interface while adding a project-scoped RL Lab backed by Python,
+Gymnasium, and Stable-Baselines3.
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> t3RL is alpha software. The current release is intended for local research and development, not
+> unattended or production training workloads.
 
-### Try it out (install-free)
+## What t3RL does
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+- Runs RL experiments on the server attached to a project, so training continues if the desktop or
+  browser client disconnects.
+- Streams bounded lifecycle and metric updates without placing high-volume telemetry in the agent
+  conversation.
+- Records the resolved seed, configuration, source revision, Python environment, runner version,
+  metrics, and artifacts for each run.
+- Replays evaluation trajectories step by step and exposes observations, actions, rewards, and
+  episode boundaries.
+- Compares compatible runs across seeds while surfacing configuration, source, and environment
+  drift.
+- Provides explainable diagnostic signals for return collapse, non-finite values, excessive KL,
+  low entropy, divergent value loss, stalled streams, and train/evaluation gaps.
+- Adds reusable research specialists and a review-gated Autoresearch workflow that prepares one
+  falsifiable iteration at a time.
+- Retains T3 Code's local and remote control surface for Codex, Claude Code, Cursor, Grok, and
+  OpenCode agents.
 
-```bash
-npx t3@latest
-```
+## RL execution coverage
 
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
+The bundled CPU runner uses `MlpPolicy` and ships with these experiments:
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
+| Algorithm | Learning style                  | Action space | Bundled environment |
+| --------- | ------------------------------- | ------------ | ------------------- |
+| PPO       | On-policy actor-critic          | Discrete     | `CartPole-v1`       |
+| A2C       | On-policy actor-critic          | Discrete     | `CartPole-v1`       |
+| DQN       | Off-policy value-based          | Discrete     | `CartPole-v1`       |
+| SAC       | Off-policy, entropy-regularized | Continuous   | `Pendulum-v1`       |
+| TD3       | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
+| DDPG      | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 
-### Desktop app
+The research catalog is intentionally broader than the execution catalog. It can help plan and
+review work involving tabular RL, model-based RL, offline and imitation learning, multi-agent RL,
+bandits, evolutionary methods, RLHF/RLAIF/RLVR, and LLM policy optimization, but those methods need
+an additional worker adapter before t3RL can execute them. The UI reports this distinction and does
+not claim that an unavailable runner is installed.
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+## Run the desktop app from source
 
-#### Windows (`winget`)
+### Prerequisites
 
-```bash
-winget install T3Tools.T3Code
-```
+- Git
+- Node.js `24.13.1` or newer within the Node 24 release line
+- [Vite+](https://viteplus.dev/) (`vp`)
+- Python `3.10`–`3.13` for real RL runs
+- At least one authenticated provider CLI if you also want to use the agent workspace
 
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
+Install Vite+ on macOS or Linux:
 
 ```bash
 curl -fsSL https://vite.plus | bash
 ```
 
-#### Windows
+On Windows PowerShell:
 
-```bash
+```powershell
 irm https://vite.plus/ps1 | iex
 ```
 
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
+### 1. Clone and install JavaScript dependencies
 
 ```bash
+git clone https://github.com/Luisgarcav/t3rl.git
+cd t3rl
 vp i
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
+### 2. Install the optional RL runtime
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+On macOS or Linux:
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+```bash
+python3.13 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ./python
+export T3RL_PYTHON="$PWD/.venv/bin/python"
+```
+
+On Windows PowerShell:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e .\python
+$env:T3RL_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
+```
+
+The Python environment is optional if you only want to open the app or use its agent features.
+RL Lab checks capabilities when it opens and shows an actionable message instead of installing
+packages automatically.
+
+### 3. Launch Electron
+
+Run this from the same terminal in which `T3RL_PYTHON` is set:
+
+```bash
+vp run dev:desktop
+```
+
+This starts the Vite renderer and the Electron desktop host together. Development state is isolated
+under this checkout's gitignored `.t3/` directory. Stop the process with `Ctrl+C`.
+
+To build an installer for the current platform:
+
+```bash
+vp run dist:desktop:artifact
+```
+
+Platform-specific build commands are also available:
+
+```bash
+vp run dist:desktop:dmg    # macOS
+vp run dist:desktop:linux  # Linux AppImage
+vp run dist:desktop:win    # Windows NSIS installer
+```
+
+## Use RL Lab
+
+1. Open or create a project in t3RL.
+2. Select the flask button next to the project, or open an empty right panel and choose
+   **Experiments**.
+3. Confirm that the `stable-baselines3` runner is available.
+4. Choose a bundled experiment, set an integer seed, and select **Start run**.
+5. Use **Overview** for lifecycle, live metrics, manifests, cancellation, and artifacts.
+6. Use **Behavior** to inspect evaluation trajectories, **Compare** to aggregate compatible runs,
+   and **Diagnostics** to review bounded heuristic findings.
+7. From the right panel, use **Specialists** to prepare a reusable research role or
+   **Autoresearch** to draft a budgeted, approval-gated iteration in the agent composer.
+
+Every intentional rerun receives a new run ID. Reconnecting to an existing run resumes its live
+view without duplicating metric points or artifacts.
+
+## Architecture
+
+```text
+Electron / web client
+  RL Lab, charts, replay, comparison, diagnostics, agent workspace
+                         |
+                         | authenticated typed RPC
+                         v
+Node server
+  lifecycle, persistence, process supervision, artifact authorization
+                         |
+                         | versioned NDJSON worker protocol
+                         v
+Python worker
+  Gymnasium + Stable-Baselines3, metrics, model, evaluation artifacts
+```
+
+The server owns execution. The client renders authoritative state, and the Python worker stays
+replaceable behind a small process protocol. This keeps local, desktop, and remote behavior aligned
+without coupling the UI to a particular RL framework.
+
+## Current limits
+
+- Each run uses one seed and CPU execution; multi-seed comparisons combine separate retained runs.
+- Active processes are marked `interrupted` after a server restart; checkpoint resume is not yet
+  implemented.
+- The bundled experiment catalog is fixed and intentionally small.
+- Diagnostics are inspection heuristics, not causal conclusions or universal RL thresholds.
+- Autoresearch prepares a single reviewed iteration; it does not edit code, launch training, expand
+  budgets, or loop autonomously without explicit approval.
+- RL experiment authoring is currently centered on the web/desktop client.
+
+## Documentation
+
+- [RL Lab user guide](./docs/user/rl-lab.md)
+- [RL Lab architecture](./docs/internals/rl-lab.md)
+- [Algorithm coverage](./docs/internals/rl-algorithm-coverage.md)
+- [Development roadmap](./docs/internals/rl-lab-roadmap.md)
+- [Install and first run](./docs/user/install.md)
+- [Remote access](./docs/user/remote-access.md)
+- [Contributor guide](./CONTRIBUTING.md)
+
+## Project status and attribution
+
+t3RL is an independent open-source fork of [T3 Code](https://github.com/pingdotgg/t3code). We are
+grateful to its maintainers and contributors for the multi-surface agent platform on which this
+research workspace is built.
+
+Licensed under the [MIT License](./LICENSE).
