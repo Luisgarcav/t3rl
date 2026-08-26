@@ -25,10 +25,12 @@ Gymnasium, and Stable-Baselines3.
   drift.
 - Provides explainable diagnostic signals for return collapse, non-finite values, excessive KL,
   low entropy, divergent value loss, stalled streams, and train/evaluation gaps.
+- Explores retained metrics as a chart, bounded data table, or declarative source, and explains the
+  resolved algorithm through a conceptual stage visualizer.
 - Adds reusable research specialists and a review-gated Autoresearch workflow that prepares one
   falsifiable iteration at a time.
-- Retains T3 Code's local and remote control surface for Codex, Claude Code, Cursor, Grok, and
-  OpenCode agents.
+- Gives Codex, Claude Code, Cursor, Grok, and OpenCode project-scoped tools for inspecting RL
+  evidence and, with the active permission mode, starting or cancelling runs.
 
 ## RL execution coverage
 
@@ -136,7 +138,9 @@ vp run dist:desktop:win    # Windows NSIS installer
    **Experiments**.
 3. Confirm that the `stable-baselines3` runner is available.
 4. Choose a bundled experiment, set an integer seed, and select **Start run**.
-5. Use **Overview** for lifecycle, live metrics, manifests, cancellation, and artifacts.
+5. Use **Overview** for lifecycle, live metrics, manifests, cancellation, and artifacts; use
+   **Data** to inspect raw metric observations and **Algorithm** to explore the resolved training
+   flow.
 6. Use **Behavior** to inspect evaluation trajectories, **Compare** to aggregate compatible runs,
    and **Diagnostics** to review bounded heuristic findings.
 7. From the right panel, use **Specialists** to prepare a reusable research role or
@@ -145,14 +149,33 @@ vp run dist:desktop:win    # Windows NSIS installer
 Every intentional rerun receives a new run ID. Reconnecting to an existing run resumes its live
 view without duplicating metric points or artifacts.
 
+## Use RL Lab with an agent
+
+The default agent receives the product-native `t3-code` RL toolkit for the current project. The same
+tools are available to every built-in provider without additional RL-specific configuration.
+
+| Research task                                             | Agent tools                     |
+| --------------------------------------------------------- | ------------------------------- |
+| Check runners and experiments                             | `rl_capabilities`               |
+| Find and inspect retained runs                            | `rl_list_runs`, `rl_get_run`    |
+| Explore metrics and diagnostics evidence                  | `rl_query_metrics`              |
+| Compare configurations and results                        | `rl_compare_runs`               |
+| Read logs, evaluations, summaries, and trajectory replays | `rl_read_artifact`              |
+| Execute or stop training                                  | `rl_start_run`, `rl_cancel_run` |
+
+The server derives project scope from the agent's thread, so a tool call cannot select another
+project. Metric responses and textual artifacts are bounded; binary models are not copied into the
+agent context. Starting and cancelling training remain permission-aware actions. Disabling agent
+browser access removes only the `preview_*` tools and does not disable the RL toolkit.
+
 ## Architecture
 
 ```text
-Electron / web client
-  RL Lab, charts, replay, comparison, diagnostics, agent workspace
-                         |
-                         | authenticated typed RPC
-                         v
+Electron / web client                         Coding agents
+  RL Lab, visualizers, comparison, diagnostics  Codex, Claude, Cursor, Grok, OpenCode
+                         |                         |
+                         | authenticated RPC       | project-scoped rl_* tools
+                         v                         v
 Node server
   lifecycle, persistence, process supervision, artifact authorization
                          |
