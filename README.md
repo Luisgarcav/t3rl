@@ -1,4 +1,4 @@
-# t3RL
+# t3rl
 
 **An open, agent-assisted control plane for reproducible reinforcement learning research.**
 
@@ -11,7 +11,7 @@ Gymnasium, and Stable-Baselines3.
 > t3RL is alpha software. The current release is intended for local research and development, not
 > unattended or production training workloads.
 
-## What t3RL does
+## What t3rl does
 
 - Runs RL experiments on the server attached to a project, so training continues if the desktop or
   browser client disconnects.
