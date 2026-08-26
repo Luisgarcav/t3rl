@@ -132,6 +132,113 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("launches Helix and Neovim in an installed terminal emulator", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-terminal-editors-" });
+    const ghosttyPath = path.join(binDir, "ghostty");
+    const helixPath = path.join(binDir, "hx");
+    const neovimPath = path.join(binDir, "nvim");
+    for (const executablePath of [ghosttyPath, helixPath, neovimPath]) {
+      yield* fileSystem.writeFileString(executablePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(executablePath, 0o755);
+    }
+
+    const spawned: ChildProcess.StandardCommand[] = [];
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({
+        editor: "helix",
+        cwd: "/tmp/workspace with spaces/src/helix.ts:12:4",
+      });
+      yield* launcher.launchEditor({
+        editor: "neovim",
+        cwd: "/tmp/workspace with spaces/src/neovim.ts:18:7",
+      });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: binDir },
+          onSpawn: (command) => {
+            spawned.push(command);
+          },
+        }),
+      ),
+    );
+
+    assert.equal(spawned.length, 2);
+    assert.equal(spawned[0]?.command, ghosttyPath);
+    assert.deepEqual(spawned[0]?.args, [
+      "-e",
+      helixPath,
+      "/tmp/workspace with spaces/src/helix.ts:12:4",
+    ]);
+    assert.equal(spawned[0]?.options.shell, false);
+    assert.equal(spawned[1]?.command, ghosttyPath);
+    assert.deepEqual(spawned[1]?.args, [
+      "-e",
+      neovimPath,
+      "+call cursor(18,7)",
+      "/tmp/workspace with spaces/src/neovim.ts",
+    ]);
+    assert.equal(spawned[1]?.options.shell, false);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("only discovers terminal editors when a terminal emulator is installed", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const editorOnlyBinDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-terminal-editors-only-",
+    });
+    for (const command of ["hx", "nvim"]) {
+      const executablePath = path.join(editorOnlyBinDir, command);
+      yield* fileSystem.writeFileString(executablePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(executablePath, 0o755);
+    }
+
+    const withoutTerminal = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      return yield* launcher.resolveAvailableEditors();
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: editorOnlyBinDir },
+        }),
+      ),
+    );
+    assert.equal(withoutTerminal.includes("helix"), false);
+    assert.equal(withoutTerminal.includes("neovim"), false);
+
+    const completeBinDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-terminal-editors-complete-",
+    });
+    for (const command of ["hx", "nvim", "ghostty"]) {
+      const executablePath = path.join(completeBinDir, command);
+      yield* fileSystem.writeFileString(executablePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(executablePath, 0o755);
+    }
+
+    const withTerminal = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      return yield* launcher.resolveAvailableEditors();
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: completeBinDir },
+        }),
+      ),
+    );
+    assert.equal(withTerminal.includes("helix"), true);
+    assert.equal(withTerminal.includes("neovim"), true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("discovers editors through the service API", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

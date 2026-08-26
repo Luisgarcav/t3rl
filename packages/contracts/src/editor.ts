@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const EditorLaunchStyle = Schema.Literals(["direct-path", "goto", "line-column"]);
+export const EditorLaunchStyle = Schema.Literals(["direct-path", "goto", "line-column", "vim"]);
 export type EditorLaunchStyle = typeof EditorLaunchStyle.Type;
 
 type EditorDefinition = {
@@ -10,6 +10,8 @@ type EditorDefinition = {
   readonly commands: readonly [string, ...string[]] | null;
   readonly baseArgs?: readonly string[];
   readonly launchStyle: EditorLaunchStyle;
+  /** Terminal editors are launched inside a host terminal emulator. */
+  readonly requiresTerminal?: boolean;
   /**
    * URL scheme for editors that support VS Code's remote deep links
    * (`<scheme>://vscode-remote/ssh-remote+<host><path>`). Only set for VS Code
@@ -50,6 +52,20 @@ export const EDITORS = [
     remoteScheme: "vscodium",
   },
   { id: "zed", label: "Zed", commands: ["zed", "zeditor"], launchStyle: "direct-path" },
+  {
+    id: "helix",
+    label: "Helix",
+    commands: ["hx", "helix"],
+    launchStyle: "direct-path",
+    requiresTerminal: true,
+  },
+  {
+    id: "neovim",
+    label: "Neovim",
+    commands: ["nvim"],
+    launchStyle: "vim",
+    requiresTerminal: true,
+  },
   { id: "antigravity", label: "Antigravity", commands: ["agy"], launchStyle: "goto" },
   { id: "idea", label: "IntelliJ IDEA", commands: ["idea"], launchStyle: "line-column" },
   { id: "aqua", label: "Aqua", commands: ["aqua"], launchStyle: "line-column" },

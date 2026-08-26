@@ -145,5 +145,11 @@ describe("buildRemoteOpenUrl", () => {
     expect(buildRemoteOpenUrl({ editor: "zed", host: "sol", absolutePath: "/tmp/x" })).toBe(
       undefined,
     );
+    expect(buildRemoteOpenUrl({ editor: "helix", host: "sol", absolutePath: "/tmp/x" })).toBe(
+      undefined,
+    );
+    expect(buildRemoteOpenUrl({ editor: "neovim", host: "sol", absolutePath: "/tmp/x" })).toBe(
+      undefined,
+    );
   });
 });

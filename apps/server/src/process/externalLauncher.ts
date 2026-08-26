@@ -18,7 +18,7 @@ import {
   type LaunchEditorInput,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
+import { isCommandAvailable, resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -48,9 +48,11 @@ export {
 export type { LaunchEditorInput };
 interface EditorLaunch {
   readonly editor: EditorId;
+  readonly label: string;
   readonly target: string;
   readonly command: string;
   readonly args: ReadonlyArray<string>;
+  readonly requiresTerminal: boolean;
 }
 
 interface ProcessLaunch {
@@ -80,6 +82,24 @@ const DETACHED_IGNORE_STDIO_OPTIONS = {
   stdout: "ignore",
   stderr: "ignore",
 } as const satisfies ChildProcess.CommandOptions;
+
+interface TerminalLauncher {
+  readonly command: string;
+  readonly argsBeforeCommand: ReadonlyArray<string>;
+  readonly kind: "argv" | "macos-terminal" | "windows-terminal";
+}
+
+const LINUX_TERMINAL_LAUNCHERS = [
+  { commands: ["x-terminal-emulator"], argsBeforeCommand: ["-e"] },
+  { commands: ["ghostty"], argsBeforeCommand: ["-e"] },
+  { commands: ["alacritty"], argsBeforeCommand: ["-e"] },
+  { commands: ["kitty"], argsBeforeCommand: [] },
+  { commands: ["wezterm"], argsBeforeCommand: ["start", "--"] },
+  { commands: ["footclient", "foot"], argsBeforeCommand: [] },
+  { commands: ["kgx", "gnome-terminal"], argsBeforeCommand: ["--"] },
+  { commands: ["konsole"], argsBeforeCommand: ["-e"] },
+  { commands: ["xterm"], argsBeforeCommand: ["-e"] },
+] as const;
 
 const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.ProcessEnv =>
   Object.fromEntries(
@@ -148,6 +168,17 @@ function resolveCommandEditorArgs(
           path,
         ],
       });
+    case "vim":
+      return Option.match(parsedTarget, {
+        onNone: () => [target],
+        onSome: ({ path, line, column }) => [
+          Option.match(column, {
+            onNone: () => `+${line}`,
+            onSome: (value) => `+call cursor(${line},${value})`,
+          }),
+          path,
+        ],
+      });
   }
 }
 
@@ -170,6 +201,66 @@ const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableComm
   }
   return Option.none();
 });
+
+const resolveTerminalLauncher = Effect.fn("externalLauncher.resolveTerminalLauncher")(function* (
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): Effect.fn.Return<Option.Option<TerminalLauncher>, never, FileSystem.FileSystem | Path.Path> {
+  if (platform === "darwin") {
+    const command = yield* resolveAvailableCommand(["osascript"], env);
+    return Option.map(command, (resolved) => ({
+      command: resolved,
+      argsBeforeCommand: [],
+      kind: "macos-terminal" as const,
+    }));
+  }
+
+  if (platform === "win32") {
+    const command = yield* resolveAvailableCommand(["wt.exe", "wt"], env);
+    return Option.map(command, (resolved) => ({
+      command: resolved,
+      argsBeforeCommand: [],
+      kind: "windows-terminal" as const,
+    }));
+  }
+
+  for (const candidate of LINUX_TERMINAL_LAUNCHERS) {
+    const command = yield* resolveAvailableCommand(candidate.commands, env);
+    if (Option.isSome(command)) {
+      return Option.some({
+        command: command.value,
+        argsBeforeCommand: candidate.argsBeforeCommand,
+        kind: "argv",
+      });
+    }
+  }
+
+  return Option.none();
+});
+
+function shellQuotePosix(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function appleScriptString(value: string): string {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+function macosTerminalScript(editorCommand: string, editorArgs: ReadonlyArray<string>): string {
+  const shellCommand = `exec ${[editorCommand, ...editorArgs].map(shellQuotePosix).join(" ")}`;
+  return [
+    'tell application "Terminal"',
+    "activate",
+    `do script ${appleScriptString(shellCommand)}`,
+    "end tell",
+  ].join("\n");
+}
+
+function terminalLauncherHint(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return "osascript";
+  if (platform === "win32") return "wt.exe";
+  return "terminal-emulator";
+}
 
 function encodeUtf16LeBase64(input: string): string {
   const bytes = new Uint8Array(input.length * 2);
@@ -267,6 +358,7 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
   env: NodeJS.ProcessEnv,
 ): Effect.fn.Return<ReadonlyArray<EditorId>, never, FileSystem.FileSystem | Path.Path> {
   const available: EditorId[] = [];
+  let terminalLauncher: Option.Option<TerminalLauncher> | undefined;
 
   for (const editor of EDITORS) {
     if (editor.commands === null) {
@@ -278,9 +370,15 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
     }
 
     const command = yield* resolveAvailableCommand(editor.commands, env);
-    if (Option.isSome(command)) {
-      available.push(editor.id);
+    if (Option.isNone(command)) continue;
+
+    const requiresTerminal = "requiresTerminal" in editor && editor.requiresTerminal === true;
+    if (requiresTerminal) {
+      terminalLauncher ??= yield* resolveTerminalLauncher(platform, env);
+      if (Option.isNone(terminalLauncher)) continue;
     }
+
+    available.push(editor.id);
   }
 
   return available;
@@ -366,9 +464,11 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
     );
     return {
       editor: editorDef.id,
+      label: editorDef.label,
       target: input.cwd,
       command,
       args: resolveEditorArgs(editorDef, input.cwd),
+      requiresTerminal: "requiresTerminal" in editorDef && editorDef.requiresTerminal === true,
     };
   }
 
@@ -378,9 +478,11 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
 
   return {
     editor: editorDef.id,
+    label: editorDef.label,
     target: input.cwd,
     command: fileManagerCommandForPlatform(platform),
     args: [input.cwd],
+    requiresTerminal: false,
   };
 });
 
@@ -422,6 +524,7 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   ExternalLauncherError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const platform = yield* HostProcessPlatform;
   const env = yield* readCommandLookupEnv;
   if (!(yield* isCommandAvailable(launch.command, { env }))) {
     return yield* new ExternalLauncherCommandNotFoundError({
@@ -430,7 +533,49 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
     });
   }
 
-  const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, { env });
+  let command = launch.command;
+  let args = launch.args;
+  if (launch.requiresTerminal) {
+    const editorCommand = yield* resolveCommandPath(launch.command, { env }).pipe(
+      Effect.mapError(
+        () =>
+          new ExternalLauncherCommandNotFoundError({
+            editor: launch.editor,
+            command: launch.command,
+          }),
+      ),
+    );
+    const terminal = yield* resolveTerminalLauncher(platform, env);
+    if (Option.isNone(terminal)) {
+      return yield* new ExternalLauncherCommandNotFoundError({
+        editor: launch.editor,
+        command: terminalLauncherHint(platform),
+      });
+    }
+    const terminalCommand = yield* resolveCommandPath(terminal.value.command, { env }).pipe(
+      Effect.mapError(
+        () =>
+          new ExternalLauncherCommandNotFoundError({
+            editor: launch.editor,
+            command: terminal.value.command,
+          }),
+      ),
+    );
+    command = terminalCommand;
+    switch (terminal.value.kind) {
+      case "macos-terminal":
+        args = ["-e", macosTerminalScript(editorCommand, launch.args)];
+        break;
+      case "windows-terminal":
+        args = ["new-tab", "--title", launch.label, editorCommand, ...launch.args];
+        break;
+      case "argv":
+        args = [...terminal.value.argsBeforeCommand, editorCommand, ...launch.args];
+        break;
+    }
+  }
+
+  const spawnCommand = yield* resolveSpawnCommand(command, args, { env });
   yield* launchAndUnref(
     {
       command: spawnCommand.command,

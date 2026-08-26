@@ -14,7 +14,7 @@ import {
   useRemoteOpenState,
 } from "../../remoteOpen";
 import { useEnvironment } from "../../state/environments";
-import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
+import { ChevronDownIcon, FolderClosedIcon, TerminalIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
@@ -53,6 +53,8 @@ type OpenInOption = {
   value: EditorId;
   kind: "brand" | "generic";
 };
+
+const TerminalEditorIcon: Icon = (props) => <TerminalIcon {...props} />;
 
 const resolveOptions = (platform: string, availableEditors: ReadonlyArray<EditorId>) => {
   const baseOptions: ReadonlyArray<OpenInOption> = [
@@ -97,6 +99,18 @@ const resolveOptions = (platform: string, availableEditors: ReadonlyArray<Editor
       Icon: Zed,
       value: "zed",
       kind: "brand",
+    },
+    {
+      label: "Helix",
+      Icon: TerminalEditorIcon,
+      value: "helix",
+      kind: "generic",
+    },
+    {
+      label: "Neovim",
+      Icon: TerminalEditorIcon,
+      value: "neovim",
+      kind: "generic",
     },
     {
       label: "Antigravity",
