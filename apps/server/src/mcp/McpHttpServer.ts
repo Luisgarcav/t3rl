@@ -22,6 +22,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { RlToolkitHandlersLive } from "./toolkits/rl/handlers.ts";
+import { RlToolkit } from "./toolkits/rl/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -216,6 +218,10 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+export const RlToolkitRegistrationLive = McpServer.toolkit(RlToolkit).pipe(
+  Layer.provide(RlToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "t3RL",
   version: packageJson.version,
@@ -223,4 +229,6 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(PreviewToolkitRegistrationLive, RlToolkitRegistrationLive).pipe(
+  Layer.provideMerge(McpTransportLive),
+);

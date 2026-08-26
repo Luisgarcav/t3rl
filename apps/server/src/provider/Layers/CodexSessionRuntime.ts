@@ -107,6 +107,8 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
+  /** Explicit preview capability carried by the provider-scoped MCP credential. */
+  readonly browserToolsAvailable?: boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -1830,7 +1832,8 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              options.browserToolsAvailable ?? hasConfiguredMcpServer(options.appServerArgs),
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

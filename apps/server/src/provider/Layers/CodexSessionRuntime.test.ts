@@ -325,6 +325,19 @@ describe("T3 browser developer instructions", () => {
     }
   });
 
+  it("describes project-scoped RL Lab tools independently of browser access", () => {
+    for (const instructions of [
+      codexDefaultModeDeveloperInstructions(true),
+      codexDefaultModeDeveloperInstructions(false),
+      codexPlanModeDeveloperInstructions(true),
+      codexPlanModeDeveloperInstructions(false),
+    ]) {
+      NodeAssert.match(instructions, /t3RL Lab tools/);
+      NodeAssert.match(instructions, /rl_start_run/);
+      NodeAssert.match(instructions, /rl_cancel_run/);
+    }
+  });
+
   it("tracks the turn's MCP configuration rather than defaulting to on", () => {
     const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
     NodeAssert.match(buildCodexDeveloperInstructions("default", runtime, true), /preview_open/);

@@ -1,7 +1,8 @@
 import type { EnvironmentId, ProjectId, RlRunId } from "@t3tools/contracts";
 import { useState } from "react";
 
-import { RlLabPage, type RlLabView } from "~/components/rl/RlLabPage";
+import { RlLabPage } from "~/components/rl/RlLabPage";
+import { type RlLabView, rlLabViewRequiresRun } from "~/components/rl/rlLabViews";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 
 import { useResearchWorkspaceFile } from "./researchWorkspaceFile";
@@ -20,7 +21,7 @@ export function ResearchExperimentsPanel(props: {
   const [activeView, setActiveView] = useState<RlLabView>("overview");
   const [savingBaselineRunId, setSavingBaselineRunId] = useState<RlRunId | null>(null);
 
-  const useAsBaseline = async (runId: RlRunId) => {
+  const handleUseAsBaseline = async (runId: RlRunId) => {
     if (workspace.isPending || savingBaselineRunId !== null) return;
     setSavingBaselineRunId(runId);
     const failure = await workspace.save({
@@ -60,11 +61,11 @@ export function ResearchExperimentsPanel(props: {
         chromeVariant="embedded"
         onSelectRun={(runId) => {
           setSelectedRunId(runId);
-          if (runId === null && (activeView === "behavior" || activeView === "diagnostics")) {
+          if (runId === null && rlLabViewRequiresRun(activeView)) {
             setActiveView("overview");
           }
         }}
-        onUseRunAsBaseline={(runId) => void useAsBaseline(runId)}
+        onUseRunAsBaseline={(runId) => void handleUseAsBaseline(runId)}
         onViewChange={setActiveView}
       />
     </div>

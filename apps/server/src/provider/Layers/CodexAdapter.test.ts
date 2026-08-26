@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -36,6 +37,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -287,6 +289,42 @@ validationLayer("CodexAdapterLive validation", (it) => {
         threadId: asThreadId("thread-1"),
         runtimeMode: "full-access",
       });
+    }),
+  );
+
+  it.effect("keeps RL MCP attached without advertising browser tools", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("thread-rl-only-mcp");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-rl-only-mcp"),
+        threadId,
+        providerSessionId: "provider-session-rl-only-mcp",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        capabilities: new Set(["rl"]),
+        endpoint: "http://127.0.0.1:3773/mcp",
+        authorizationHeader: "Bearer rl-only-token",
+      });
+
+      yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(
+          Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+        );
+
+      const runtime = validationRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.browserToolsAvailable, false);
+      NodeAssert.deepStrictEqual(runtime.options.appServerArgs, [
+        "-c",
+        "mcp_servers.t3-code.url=http://127.0.0.1:3773/mcp",
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+      ]);
     }),
   );
 });

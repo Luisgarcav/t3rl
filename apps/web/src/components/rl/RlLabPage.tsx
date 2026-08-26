@@ -21,9 +21,11 @@ import {
   BoxIcon,
   CheckCircle2Icon,
   Clock3Icon,
+  DatabaseIcon,
   ExternalLinkIcon,
   FlaskConicalIcon,
   GaugeIcon,
+  GitBranchIcon,
   LayoutDashboardIcon,
   PlayIcon,
   RefreshCcwIcon,
@@ -49,9 +51,12 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
+import { RlAlgorithmVisualizer } from "./algorithm/RlAlgorithmVisualizer";
 import { RlRunComparison } from "./comparison/RlRunComparison";
+import { RlDataExplorer } from "./data/RlDataExplorer";
 import { RlDiagnosticsPanel } from "./diagnostics/RlDiagnosticsPanel";
 import { analyzeRlDiagnostics } from "./diagnostics/rlDiagnostics";
+import { type RlLabView, rlLabViewRequiresRun } from "./rlLabViews";
 import { RlMetricChart } from "./RlMetricChart";
 import {
   formatRlBytes,
@@ -62,7 +67,6 @@ import {
 } from "./rlPresentation";
 import { TrajectoryViewer } from "./trajectory/TrajectoryViewer";
 
-export type RlLabView = "overview" | "behavior" | "compare" | "diagnostics";
 type RunScopedRlLabView = Exclude<RlLabView, "compare">;
 
 const RL_LAB_VIEWS: ReadonlyArray<{
@@ -72,6 +76,8 @@ const RL_LAB_VIEWS: ReadonlyArray<{
   readonly icon: ReactNode;
 }> = [
   { id: "overview", label: "Overview", requiresRun: false, icon: <LayoutDashboardIcon /> },
+  { id: "data", label: "Data", requiresRun: true, icon: <DatabaseIcon /> },
+  { id: "algorithm", label: "Algorithm", requiresRun: true, icon: <GitBranchIcon /> },
   { id: "behavior", label: "Behavior", requiresRun: true, icon: <RouteIcon /> },
   { id: "compare", label: "Compare", requiresRun: false, icon: <BarChart3Icon /> },
   { id: "diagnostics", label: "Diagnostics", requiresRun: true, icon: <ActivityIcon /> },
@@ -133,9 +139,7 @@ export function RlLabPage({
     selectedSummary !== null && selectedSummary.runId === run.runId ? selectedSummary : run,
   );
   const effectiveView =
-    selectedRunId === null && (activeView === "behavior" || activeView === "diagnostics")
-      ? "overview"
-      : activeView;
+    selectedRunId === null && rlLabViewRequiresRun(activeView) ? "overview" : activeView;
   const runView: RunScopedRlLabView = effectiveView === "compare" ? "overview" : effectiveView;
 
   return (
@@ -759,6 +763,15 @@ function RunDetail({
             <ArtifactsCard artifacts={artifacts} environmentId={environmentId} runId={runId} />
           </div>
         </>
+      ) : view === "data" ? (
+        <RlDataExplorer metrics={metrics} />
+      ) : view === "algorithm" ? (
+        <RlAlgorithmVisualizer
+          experimentId={summary.experimentId}
+          key={summary.runId}
+          manifest={manifest}
+          metrics={metrics}
+        />
       ) : view === "behavior" ? (
         <RunBehavior
           artifacts={artifacts}

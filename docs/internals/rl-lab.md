@@ -379,25 +379,41 @@ The PPO `CartPole-v1` slice includes return, episode length, evaluation return, 
 value loss, entropy, approximate KL divergence when reported by the runner, elapsed time, and a final
 evaluation replay. It also surfaces worker errors and non-finite metrics.
 
+The web/desktop client also provides two manifest-backed inspection surfaces without widening the
+wire contract. The data explorer discovers arbitrary metric keys from the bounded run projection
+and renders only the selected mode. The algorithm visualizer maps the resolved algorithm to a
+declarative stage graph and labels its playback as conceptual; it never infers a live optimizer
+phase from metric arrival. Both expose `Visual`, `Data`, and `Source` modes so the rendered claim can
+be checked against its retained inputs.
+
 Replay-buffer inspection, state visitation maps, gradient and activation distributions, checkpoint
 alignment, custom panels, and cross-run diagnostic overlays follow after the metric and artifact
 contracts have proven stable.
 
 ## Agent integration
 
-Agent assistance should operate on structured evidence rather than screenshots or copied chart text.
-The long-term interface should allow an agent to:
+Agent assistance operates on structured evidence rather than screenshots or copied chart text. The
+product-native `t3-code` MCP server exposes the same project-scoped toolkit to Codex, Claude,
+Cursor, Grok, and OpenCode. It allows an agent to:
 
 - inspect experiment definitions and resolved manifests;
 - query bounded metric summaries and selected time ranges;
 - read run logs and failure reasons;
 - compare two or more run summaries;
-- locate the code diff and source snapshot associated with a run;
+- locate the source revision and dirty-worktree evidence recorded by a run;
 - propose a new experiment definition or ablation as an ordinary workspace edit;
 - start a run only through an explicit, permission-aware action.
 
-The first vertical slice does not add provider-specific behavior. It exposes run summaries in a
-stable server API first; agent tools or generated context can build on that API later.
+The concrete tools are `rl_capabilities`, `rl_list_runs`, `rl_get_run`, `rl_query_metrics`,
+`rl_compare_runs`, `rl_read_artifact`, `rl_start_run`, and `rl_cancel_run`. The MCP credential derives
+the project from its thread; callers cannot supply a different project ID, and foreign run IDs are
+reported as missing. Metric queries, summaries, comparisons, and textual artifact reads are bounded.
+Binary models are never copied into model context.
+
+RL access is attached by default and is independent of agent browser access. Disabling
+`enableAgentBrowserAccess` removes only the `preview` capability; it does not remove the `rl`
+capability. Starting and cancelling runs are annotated as destructive permission-aware operations,
+while every evidence tool is read-only, idempotent, and closed-world.
 
 ### Right-panel research workbenches
 
@@ -427,8 +443,8 @@ untrusted data in the prepared prompt. The prepared first turn must stop before 
 request explicit approval.
 
 This is an assisted single-iteration seam, not the Phase 2B autonomous controller. Server-enforced
-multi-iteration budgets, durable hypothesis-to-outcome records, agent-facing evidence tools, and
-automatic authorized run execution remain Phase 2B work.
+multi-iteration budgets, durable hypothesis-to-outcome records, and automatic authorized run
+execution remain Phase 2B work.
 
 ## Security and permissions
 

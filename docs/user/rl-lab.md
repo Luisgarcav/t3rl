@@ -34,10 +34,15 @@ deduplicated by the server.
 ## Monitor and reopen runs
 
 The project history shows every retained run and its authoritative lifecycle state. Selecting a run
-opens its live view. The navigation under the lab header separates four investigation surfaces:
+opens its live view. The navigation under the lab header separates six investigation surfaces:
 
 - **Overview** shows lifecycle status, cancellation, live training metrics, the immutable resolved
   manifest, and signed artifact links.
+- **Data** explores every retained metric, including custom worker keys. Switch between a bounded
+  line chart, the latest raw observations, and the declarative source used by the renderer.
+- **Algorithm** walks through a conceptual stage graph derived from the immutable resolved
+  manifest. Its playback controls explain the algorithm; the highlighted stage is not presented as
+  live worker execution unless later instrumentation explicitly reports that state.
 - **Behavior** replays bounded trajectory artifacts step by step, including observations, actions,
   rewards, and terminal or truncated episode boundaries.
 - **Compare** aggregates exact-step observations across verified seeds for one experiment. Missing
@@ -50,6 +55,12 @@ opens its live view. The navigation under the lab header separates four investig
 RL Lab receives a bounded snapshot before live updates. Reopening the page or reconnecting to the
 server resumes the same run ID without duplicating metric points or artifacts. A quiet metric stream
 does not imply completion; only the lifecycle status does.
+
+The default coding agent can use these same project-scoped utilities through the product-native RL
+Lab tools. It can inspect the experiment catalog, manifests, metrics, comparisons, textual artifacts,
+logs, evaluations, and trajectory replays without relying on screenshots. Starting or cancelling a
+run remains a permission-aware action. Turning off agent browser access disables only browser
+control; it does not remove the agent's RL Lab evidence tools.
 
 From a run detail, **Use as baseline** saves that run into the workspace research configuration and
 opens Autoresearch. From Autoresearch, **Open run** returns to the selected baseline evidence.
