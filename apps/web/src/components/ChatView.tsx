@@ -12,6 +12,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type ResolvedKeybindingsConfig,
+  type RlRunId,
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
@@ -153,6 +154,9 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
+import { ResearchAutoresearchPanel } from "./research/ResearchAutoresearchPanel";
+import { ResearchExperimentsPanel } from "./research/ResearchExperimentsPanel";
+import { ResearchSpecialistsPanel } from "./research/ResearchSpecialistsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
@@ -1391,6 +1395,10 @@ function ChatViewContent(props: ChatViewProps) {
   const [pendingServerThreadEnvMode, setPendingServerThreadEnvMode] =
     useState<DraftThreadEnvMode | null>(null);
   const [pendingServerThreadBranch, setPendingServerThreadBranch] = useState<string | null>();
+  const [researchRunTarget, setResearchRunTarget] = useState<{
+    readonly threadKey: string;
+    readonly runId: RlRunId;
+  } | null>(null);
   const [
     pendingServerThreadStartFromOriginByThreadId,
     setPendingServerThreadStartFromOriginByThreadId,
@@ -3308,6 +3316,48 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addExperimentsSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    setResearchRunTarget(null);
+    useRightPanelStore.getState().open(activeThreadRef, "experiments");
+  }, [activeProject, activeThreadRef]);
+  const addSpecialistsSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore.getState().open(activeThreadRef, "specialists");
+  }, [activeProject, activeThreadRef]);
+  const addAutoresearchSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore.getState().open(activeThreadRef, "autoresearch");
+  }, [activeProject, activeThreadRef]);
+  const openResearchRun = useCallback(
+    (runId: RlRunId) => {
+      if (!activeThreadRef || !activeProject) return;
+      setResearchRunTarget({ threadKey: scopedThreadKey(activeThreadRef), runId });
+      useRightPanelStore.getState().open(activeThreadRef, "experiments");
+    },
+    [activeProject, activeThreadRef],
+  );
+  const prepareResearchPrompt = useCallback(
+    (prompt: string) => {
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt.trim() ?? "";
+      setComposerDraftPrompt(
+        composerDraftTarget,
+        currentPrompt.length === 0
+          ? prompt
+          : `${prompt}\n\n## Existing composer notes\n${currentPrompt}`,
+      );
+      scheduleComposerFocus();
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: "Research turn prepared",
+          description: "Review the visible instructions in the composer before sending.",
+        }),
+      );
+    },
+    [composerDraftTarget, scheduleComposerFocus, setComposerDraftPrompt],
+  );
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -6157,7 +6207,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
       <PullRequestsUnavailableState
         title="Pull requests unavailable"
-        error="Update this environment's T3 Code server to browse pull requests."
+        error="Update this environment's t3RL server to browse pull requests."
       />
     ) : activeRightPanelSurface?.kind === "pull-request" ? (
       // No onClose: the surface tab's own X owns closing here, and a second X in the header
@@ -6198,6 +6248,32 @@ function ChatViewContent(props: ChatViewProps) {
         model={agentPanelModel}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
+      />
+    ) : activeRightPanelSurface?.kind === "experiments" && activeProject && activeWorkspaceRoot ? (
+      <ResearchExperimentsPanel
+        environmentId={activeThread.environmentId}
+        projectId={activeProject.id}
+        cwd={activeWorkspaceRoot}
+        initialSelectedRunId={
+          researchRunTarget?.threadKey === activeThreadKey ? researchRunTarget.runId : null
+        }
+        onOpenAutoresearch={addAutoresearchSurface}
+      />
+    ) : activeRightPanelSurface?.kind === "specialists" && activeWorkspaceRoot ? (
+      <ResearchSpecialistsPanel
+        environmentId={activeThread.environmentId}
+        cwd={activeWorkspaceRoot}
+        onOpenAutoresearch={addAutoresearchSurface}
+        onPreparePrompt={prepareResearchPrompt}
+      />
+    ) : activeRightPanelSurface?.kind === "autoresearch" && activeProject && activeWorkspaceRoot ? (
+      <ResearchAutoresearchPanel
+        environmentId={activeThread.environmentId}
+        projectId={activeProject.id}
+        cwd={activeWorkspaceRoot}
+        onOpenBaseline={openResearchRun}
+        onOpenSpecialists={addSpecialistsSurface}
+        onPreparePrompt={prepareResearchPrompt}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -6670,12 +6746,18 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          onAddExperiments={addExperimentsSurface}
+          onAddSpecialists={addSpecialistsSurface}
+          onAddAutoresearch={addAutoresearchSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           agentsAvailable
+          experimentsAvailable={activeProject !== null && activeWorkspaceRoot !== undefined}
+          specialistsAvailable={activeWorkspaceRoot !== undefined}
+          autoresearchAvailable={activeProject !== null && activeWorkspaceRoot !== undefined}
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -6710,12 +6792,18 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            onAddExperiments={addExperimentsSurface}
+            onAddSpecialists={addSpecialistsSurface}
+            onAddAutoresearch={addAutoresearchSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
             agentsAvailable
+            experimentsAvailable={activeProject !== null && activeWorkspaceRoot !== undefined}
+            specialistsAvailable={activeWorkspaceRoot !== undefined}
+            autoresearchAvailable={activeProject !== null && activeWorkspaceRoot !== undefined}
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}
           >

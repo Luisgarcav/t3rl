@@ -1,9 +1,9 @@
 # T3RL phased development plan
 
-> For maintainers. This roadmap describes proposed delivery order, not shipped behavior or calendar
+> For maintainers. This roadmap describes delivery order and remaining gates, not calendar
 > commitments.
 
-Status: proposal
+Status: Phase 1 backend and initial RL Lab client complete; end-to-end validation and measurement remain active work
 
 Architecture: [T3RL research lab architecture](./rl-lab.md)
 
@@ -59,8 +59,8 @@ contracts           PPO + CartPole             2A evidence and debugging
 > confinement, storage, host boundary, supervision, and a deterministic Python fake worker, reachable
 > over six RPC methods. Design and reasoning:
 > [run kernel design](../superpowers/specs/2026-08-24-t3rl-run-kernel-design.md).
-> Deliverables below that remain open: the checked-in PPO/`CartPole-v1` definition (the shipped
-> catalog holds fake-worker definitions only) and artifact retention.
+> The checked-in PPO/`CartPole-v1` definition now ships with the backend worker bundle. Artifact
+> retention and cleanup remain open.
 
 ### Goal
 
@@ -115,6 +115,12 @@ process lifecycles exist.
 
 ## Phase 1: first vertical slice
 
+> **Backend status: implemented.** Workstreams 1A and 1B are complete, including transport
+> idempotency, reconnectable metric snapshots, the bundled Stable-Baselines3 runner, separate seeded
+> evaluation, production artifact budgets, and a gated real-worker smoke test. Workstream 1C now
+> provides the project-scoped launcher, reconnectable run view, charts, manifest, and artifact access.
+> The client/performance portions of 1D remain before Phase 1 can pass its full exit gate.
+
 ### Goal
 
 Deliver one complete, reconnectable, reproducible experiment through the real T3RL stack: PPO on
@@ -127,6 +133,8 @@ Deliver one complete, reconnectable, reproducible experiment through the real T3
 - Supervise the exact worker process identity and bounded stderr log.
 - Mark active runs as explicitly interrupted after server restart.
 - Implement capability, list, start, cancel, subscribe, and artifact access boundaries.
+- Deduplicate transport retries by `(projectId, requestId)` while preserving deliberate reruns under
+  a new request id.
 - Persist metrics outside the orchestration event log.
 
 ### Workstream 1B: Stable-Baselines3 worker
@@ -137,9 +145,12 @@ Deliver one complete, reconnectable, reproducible experiment through the real T3
 - Train PPO on `CartPole-v1` and perform a separate final evaluation.
 - Emit at most two metric batches per second through the versioned protocol.
 - Retain manifest, episode summaries, bounded log, final model, evaluation summary, and replay.
-- Report non-finite values, runner exceptions, and unavailable optional artifacts explicitly.
+- Report non-finite values and runner exceptions explicitly.
 
 ### Workstream 1C: RL Lab client
+
+> **Status: implemented for the initial web/desktop surface.** Visual validation, remote-browser
+> control, and renderer performance measurement remain in Workstream 1D.
 
 - Add a run-centered RL Lab surface without representing each run as a conversation thread.
 - Display capability failures before the user attempts to start training.
@@ -173,7 +184,7 @@ Deliver one complete, reconnectable, reproducible experiment through the real T3
 
 ### Explicit deferrals
 
-- Algorithm and environment catalogs.
+- User-extensible algorithm and environment catalogs beyond the bundled Phase 1 definition.
 - Multi-seed conclusions and statistical comparison.
 - Deep gradients, activations, replay-buffer inspection, and state maps.
 - Automatic experiment execution by agents.
@@ -223,6 +234,14 @@ to the run, trajectory, checkpoint, manifest, and source evidence that produced 
 - At least one non-PPO algorithm uses the same lifecycle, manifest, and artifact contracts.
 
 ## Phase 2B: agent-assisted research loop
+
+> **Initial client seam implemented.** The right-panel selector now provides project-versioned
+> specialist instructions and a single review-gated Autoresearch brief with bounded baseline
+> evidence. Its algorithm catalog spans the major RL families and treats RLVR, RLHF, and RLAIF as
+> reward regimes orthogonal to PPO, GRPO, RLOO, and related optimizers. This does not satisfy the
+> Phase 2B gate: most entries still need worker adapters, execution is not yet an autonomous
+> controller, budgets are not yet server-enforced across turns, and durable hypothesis-to-outcome
+> records and agent-facing evidence tools remain open.
 
 ### Goal
 

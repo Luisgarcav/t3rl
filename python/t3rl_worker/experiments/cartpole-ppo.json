@@ -1,0 +1,30 @@
+{
+  "experimentId": "cartpole-ppo",
+  "displayName": "PPO on CartPole-v1",
+  "description": "Train a CPU PPO policy and evaluate it on separately seeded CartPole episodes.",
+  "runnerId": "stable-baselines3",
+  "instrumentationLevel": "standard",
+  "defaultSeed": 7,
+  "entrypoint": "../sb3_worker.py",
+  "maxRuntimeSeconds": 1800,
+  "config": {
+    "algorithm": "PPO",
+    "environment": "CartPole-v1",
+    "policy": "MlpPolicy",
+    "device": "cpu",
+    "totalTimesteps": 25000,
+    "nSteps": 256,
+    "batchSize": 64,
+    "nEpochs": 10,
+    "learningRate": 0.0003,
+    "gamma": 0.99,
+    "gaeLambda": 0.95,
+    "clipRange": 0.2,
+    "entropyCoefficient": 0.0,
+    "valueCoefficient": 0.5,
+    "maxGradNorm": 0.5,
+    "evaluationEpisodes": 10,
+    "evaluationSeedOffset": 100000,
+    "maxEvaluationSteps": 500
+  }
+}

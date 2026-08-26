@@ -162,6 +162,22 @@ const buildCmd = Command.make(
         }),
       );
 
+      const workerSource = path.join(repoRoot, "python/t3rl_worker");
+      const workerTarget = path.join(serverDir, "dist/t3rl_worker");
+      yield* fs.remove(workerTarget, { recursive: true, force: true });
+      yield* fs.makeDirectory(workerTarget, { recursive: true });
+      yield* Effect.all(
+        ["fake_worker.py", "sb3_worker.py"].map((file) =>
+          fs.copyFile(path.join(workerSource, file), path.join(workerTarget, file)),
+        ),
+        { discard: true },
+      );
+      yield* fs.copy(
+        path.join(workerSource, "experiments"),
+        path.join(workerTarget, "experiments"),
+      );
+      yield* Effect.log("[cli] Bundled T3RL workers into dist/t3rl_worker");
+
       const webDist = path.join(repoRoot, "apps/web/dist");
       const clientTarget = path.join(serverDir, "dist/client");
 
@@ -227,6 +243,8 @@ const publishCmd = Command.make(
         "dist/bin.mjs",
         "dist/service-launcher.mjs",
         "dist/client/index.html",
+        "dist/t3rl_worker/experiments/cartpole-ppo.json",
+        "dist/t3rl_worker/sb3_worker.py",
       ]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {
@@ -308,7 +326,7 @@ const publishCmd = Command.make(
 // ---------------------------------------------------------------------------
 
 const cli = Command.make("cli").pipe(
-  Command.withDescription("T3 server build & publish CLI."),
+  Command.withDescription("t3RL server build & publish CLI."),
   Command.withSubcommands([buildCmd, publishCmd]),
 );
 

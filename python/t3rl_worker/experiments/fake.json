@@ -1,9 +1,12 @@
 {
   "experimentId": "fake",
+  "displayName": "Deterministic fake worker",
+  "description": "Exercises the T3RL run kernel without training a policy.",
   "runnerId": "fake",
   "instrumentationLevel": "minimal",
   "defaultSeed": 7,
-  "entrypoint": "python/t3rl_worker/fake_worker.py",
+  "entrypoint": "../fake_worker.py",
   "scenario": "success",
+  "maxRuntimeSeconds": 60,
   "config": {}
 }

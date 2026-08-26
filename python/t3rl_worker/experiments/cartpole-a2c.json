@@ -1,0 +1,27 @@
+{
+  "experimentId": "cartpole-a2c",
+  "displayName": "A2C on CartPole-v1",
+  "description": "Train a CPU A2C policy and evaluate it on separately seeded CartPole episodes.",
+  "runnerId": "stable-baselines3",
+  "instrumentationLevel": "standard",
+  "defaultSeed": 7,
+  "entrypoint": "../sb3_worker.py",
+  "maxRuntimeSeconds": 1800,
+  "config": {
+    "algorithm": "A2C",
+    "environment": "CartPole-v1",
+    "policy": "MlpPolicy",
+    "device": "cpu",
+    "totalTimesteps": 25000,
+    "nSteps": 16,
+    "learningRate": 0.0007,
+    "gamma": 0.99,
+    "gaeLambda": 1.0,
+    "entropyCoefficient": 0.0,
+    "valueCoefficient": 0.5,
+    "maxGradNorm": 0.5,
+    "evaluationEpisodes": 10,
+    "evaluationSeedOffset": 100000,
+    "maxEvaluationSteps": 500
+  }
+}

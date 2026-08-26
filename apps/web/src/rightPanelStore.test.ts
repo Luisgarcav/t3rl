@@ -252,6 +252,23 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps each research workbench as a singleton surface", () => {
+    useRightPanelStore.getState().open(refA, "experiments");
+    useRightPanelStore.getState().open(refA, "specialists");
+    useRightPanelStore.getState().open(refA, "autoresearch");
+    useRightPanelStore.getState().open(refA, "experiments");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "experiments",
+      surfaces: [
+        { id: "experiments", kind: "experiments" },
+        { id: "specialists", kind: "specialists" },
+        { id: "autoresearch", kind: "autoresearch" },
+      ],
+    });
+  });
+
   it("replaces the standalone explorer with peer file surfaces", () => {
     useRightPanelStore.getState().open(refA, "files");
     useRightPanelStore.getState().openFile(refA, "src/index.ts");

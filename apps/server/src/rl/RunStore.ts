@@ -43,6 +43,7 @@ export interface InsertRequestedInput {
   readonly projectId: string;
   readonly experimentId: string;
   readonly requestedAt: string;
+  readonly requestId?: string | undefined;
 }
 
 export interface UpdateStateInput {
@@ -71,7 +72,9 @@ export interface RecordArtifactInput {
 }
 
 export interface RunStoreShape {
-  readonly insertRequested: (input: InsertRequestedInput) => Effect.Effect<void, RunStoreError>;
+  readonly insertRequested: (
+    input: InsertRequestedInput,
+  ) => Effect.Effect<{ readonly runId: string; readonly inserted: boolean }, RunStoreError>;
   readonly updateState: (input: UpdateStateInput) => Effect.Effect<void, RunStoreError>;
   /** Writes the manifest exactly once; a second write is refused. */
   readonly setManifest: (input: {
@@ -137,6 +140,7 @@ const decodeRunSummary = Schema.decodeUnknownSync(RlRunSummary);
 const decodeManifest = Schema.decodeUnknownSync(RlResolvedManifest);
 const decodeMetricBatch = Schema.decodeUnknownSync(RlMetricBatch);
 const decodeArtifact = Schema.decodeUnknownSync(RlArtifactMetadata);
+const isPersistenceSqlError = Schema.is(PersistenceSqlError);
 
 const toSummary = (row: RunRow): RlRunSummary =>
   decodeRunSummary({
@@ -171,10 +175,49 @@ const makeRunStore = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
 
   const insertRequested: RunStoreShape["insertRequested"] = (input) =>
-    sql`
-      INSERT INTO rl_runs (run_id, project_id, experiment_id, state, requested_at)
-      VALUES (${input.runId}, ${input.projectId}, ${input.experimentId}, 'requested', ${input.requestedAt})
-    `.pipe(Effect.asVoid, Effect.mapError(toPersistenceSqlError("rl.insertRequested")));
+    Effect.gen(function* () {
+      if (input.requestId === undefined) {
+        yield* sql`
+          INSERT INTO rl_runs (run_id, project_id, experiment_id, state, requested_at)
+          VALUES (${input.runId}, ${input.projectId}, ${input.experimentId}, 'requested', ${input.requestedAt})
+        `;
+        return { runId: input.runId, inserted: true };
+      }
+
+      yield* sql`
+        INSERT OR IGNORE INTO rl_runs
+          (run_id, project_id, experiment_id, state, requested_at, client_request_id)
+        VALUES (
+          ${input.runId},
+          ${input.projectId},
+          ${input.experimentId},
+          'requested',
+          ${input.requestedAt},
+          ${input.requestId}
+        )
+      `;
+      const changes = yield* sql<{ readonly inserted: number }>`SELECT changes() AS inserted`;
+      if ((changes[0]?.inserted ?? 0) > 0) {
+        return { runId: input.runId, inserted: true };
+      }
+      const existing = yield* sql<{ readonly runId: string }>`
+        SELECT run_id AS "runId"
+        FROM rl_runs
+        WHERE project_id = ${input.projectId} AND client_request_id = ${input.requestId}
+      `;
+      const existingRun = existing[0];
+      if (existingRun === undefined) {
+        return yield* new PersistenceSqlError({
+          operation: "rl.insertRequested",
+          detail: "idempotent insert was ignored without an existing request match",
+        });
+      }
+      return { runId: existingRun.runId, inserted: false };
+    }).pipe(
+      Effect.mapError((cause) =>
+        isPersistenceSqlError(cause) ? cause : toPersistenceSqlError("rl.insertRequested")(cause),
+      ),
+    );
 
   const updateState: RunStoreShape["updateState"] = (input) =>
     Effect.gen(function* () {
@@ -253,6 +296,9 @@ const makeRunStore = Effect.gen(function* () {
           ${input.producedAt}
         )
       `.pipe(Effect.mapError(toPersistenceSqlError("rl.recordArtifact")));
+      yield* sql`
+        UPDATE rl_runs SET last_message_at = ${input.producedAt} WHERE run_id = ${input.runId}
+      `.pipe(Effect.mapError(toPersistenceSqlError("rl.recordArtifact.touch")));
       return decodeArtifact({
         artifactId,
         kind: input.kind,
@@ -281,10 +327,14 @@ const makeRunStore = Effect.gen(function* () {
       readonly valuesJson: string;
     }>`
       SELECT step, wall_clock_ms AS "wallClockMs", values_json AS "valuesJson"
-      FROM rl_run_metrics
-      WHERE run_id = ${input.runId}
+      FROM (
+        SELECT seq, step, wall_clock_ms, values_json
+        FROM rl_run_metrics
+        WHERE run_id = ${input.runId}
+        ORDER BY seq DESC
+        LIMIT ${input.limit}
+      ) AS recent_metrics
       ORDER BY seq ASC
-      LIMIT ${input.limit}
     `.pipe(
       Effect.map((rows) =>
         rows.map((row) =>
@@ -386,7 +436,12 @@ const makeRunStore = Effect.gen(function* () {
       `;
       yield* sql`
         UPDATE rl_runs
-        SET state = 'interrupted', ended_at = ${input.at}
+        SET
+          state = 'interrupted',
+          error_code = 'ServerInterrupted',
+          error_message = 'server restarted while run was active',
+          ended_at = ${input.at},
+          last_message_at = ${input.at}
         WHERE state IN ${sql.in(ACTIVE_STATES)}
       `;
       return before[0]?.count ?? 0;

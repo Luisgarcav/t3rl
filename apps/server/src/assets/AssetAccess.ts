@@ -449,11 +449,24 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     });
     if (artifactPath === null) return null;
     const fileSystem = yield* FileSystem.FileSystem;
-    const info = yield* optionOnNotFound(fileSystem.stat(artifactPath)).pipe(
+    const path = yield* Path.Path;
+    const runRoot = RlArtifacts.runDirectory({
+      rlRunsDir: config.rlRunsDir,
+      runId: claims.runId,
+    });
+    if (runRoot === null) return null;
+    const [canonicalRoot, canonicalFile] = yield* Effect.all([
+      optionOnNotFound(fileSystem.realPath(runRoot)),
+      optionOnNotFound(fileSystem.realPath(artifactPath)),
+    ]).pipe(Effect.orElseSucceed(() => [Option.none<string>(), Option.none<string>()] as const));
+    if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) return null;
+    const relative = path.relative(canonicalRoot.value, canonicalFile.value);
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+    const info = yield* optionOnNotFound(fileSystem.stat(canonicalFile.value)).pipe(
       Effect.orElseSucceed(() => Option.none()),
     );
     return Option.isSome(info) && info.value.type === "File"
-      ? ({ kind: "file", path: artifactPath } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: canonicalFile.value } satisfies ResolvedAsset)
       : null;
   }
 

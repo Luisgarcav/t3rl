@@ -2,7 +2,7 @@
 
 > For maintainers. Design for the first T3 Code integration increment of T3RL.
 
-Status: approved design, not yet implemented
+Status: implemented and extended by the Phase 1 Stable-Baselines3 backend
 Date: 2026-08-24
 Architecture context: [T3RL research lab architecture](../../internals/rl-lab.md)
 Delivery context: [T3RL phased development plan](../../internals/rl-lab-roadmap.md)
@@ -180,8 +180,9 @@ observably rather than silently ignored, which is what makes the rejection path 
 
 ### Idempotency
 
-- Starting a run returns a fresh `RlRunId` per accepted request. There is no implicit deduplication;
-  a caller that retries deliberately gets a second run, which is correct for research.
+- `rl.startRun` requires a client request id. Retrying the same `(projectId, requestId)` returns the
+  original `RlRunId` without spawning again. A deliberate rerun uses a new request id and receives a
+  fresh run id.
 - Cancelling an already-terminal run succeeds without effect and returns the terminal state.
 - Cancelling twice while `cancelling` is a no-op.
 
@@ -189,20 +190,21 @@ observably rather than silently ignored, which is what makes the rejection path 
 
 ### Types in `rl.ts`
 
-| Type | Contents |
-|---|---|
-| `RlRunId` | opaque server-generated identifier; clients never mint one |
-| `RlExperimentRef` | project-relative path to a version-controlled experiment definition |
-| `RlResolvedManifest` | effective configuration, seed, source revision and dirty-worktree evidence, Python executable and environment fingerprint, runner id and version, worker protocol version, instrumentation level, relevant hardware |
-| `RlRunLifecycle` | tagged union of the states above, carrying error code and message on `failed` |
-| `RlRunSummary` | compact row for listing and reconnection |
-| `RlMetricBatch` | `{ step, wallClockMs, values }`; bounded key count and key length |
-| `RlArtifactMetadata` | `{ artifactId, kind, bytes, contentType, producedAt }`; the id is opaque and never a path |
-| `RlCapabilityReport` | available runners, and for each unavailable one an actionable failure |
+| Type                  | Contents                                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RlRunId`             | opaque server-generated identifier; clients never mint one                                                                                                                                                          |
+| `RlRunRequestId`      | client-generated transport idempotency key scoped to a project                                                                                                                                                      |
+| `RlExperimentSummary` | discoverable bundled definition metadata and fixed configuration                                                                                                                                                    |
+| `RlResolvedManifest`  | effective configuration, seed, source revision and dirty-worktree evidence, Python executable and environment fingerprint, runner id and version, worker protocol version, instrumentation level, relevant hardware |
+| `RlRunState`          | lifecycle states above; failed details live on the summary                                                                                                                                                          |
+| `RlRunSummary`        | compact row for listing and reconnection                                                                                                                                                                            |
+| `RlMetricBatch`       | `{ step, wallClockMs, values }`; bounded key count and key length                                                                                                                                                   |
+| `RlArtifactMetadata`  | `{ artifactId, kind, bytes, contentType, producedAt }`; the id is opaque and never a path                                                                                                                           |
+| `RlCapabilityReport`  | runner availability and remedies plus the experiment catalog                                                                                                                                                        |
 
-`RlMetricBatch.values` maps a metric name to `number | null`. `null` means **not captured**. A
-synthetic zero is forbidden: in reinforcement learning a zero loss and an unrecorded loss are
-opposite claims, and conflating them makes charts lie.
+`RlMetricBatch.values` maps a metric name to `number | null | "nan" | "+inf" | "-inf"`. `null`
+means **not captured**. A synthetic zero is forbidden: in reinforcement learning a zero loss and an
+unrecorded loss are opposite claims, and conflating them makes charts lie.
 
 ### Bounds
 
@@ -212,14 +214,14 @@ maximum artifact count per run, maximum error message length.
 
 ### RPC methods
 
-| Method | Scope | Behavior |
-|---|---|---|
-| `rl.capabilities` | read | report runners and actionable setup failures; never installs anything |
-| `rl.listRuns` | read | run summaries for a project, newest first |
-| `rl.getRun` | read | manifest, summary, artifact metadata |
-| `rl.startRun` | operate | validate, resolve manifest, spawn; returns the run id |
-| `rl.cancelRun` | operate | request cancellation; returns immediately |
-| `rl.subscribeRun` | read | snapshot then live lifecycle and metric batches |
+| Method            | Scope   | Behavior                                                              |
+| ----------------- | ------- | --------------------------------------------------------------------- |
+| `rl.capabilities` | read    | report runners and actionable setup failures; never installs anything |
+| `rl.listRuns`     | read    | run summaries for a project, newest first                             |
+| `rl.getRun`       | read    | manifest, summary, bounded metrics, artifact metadata                 |
+| `rl.startRun`     | operate | validate, resolve manifest, spawn; returns the run id                 |
+| `rl.cancelRun`    | operate | request cancellation; returns immediately                             |
+| `rl.subscribeRun` | read    | snapshot then live lifecycle, manifest, artifact, and metric events   |
 
 `rl.subscribeRun` follows the snapshot-then-live shape of `terminalAttach` in
 `apps/server/src/ws.ts:2046`, so a client that reconnects rebuilds current state without replaying
@@ -229,14 +231,14 @@ the run and without duplicating it.
 
 Versioned NDJSON on the worker's stdout, one JSON object per line.
 
-| Message | When | Notes |
-|---|---|---|
-| `hello` | first, within a startup timeout | carries protocol version, runner id, runner version |
-| `manifest` | once, after `hello` | runner-resolved defaults, merged into the stored manifest |
-| `metrics` | repeatedly | a batch; rate-limited server side |
-| `artifact` | as produced | kind plus a path relative to the run directory |
-| `error` | any time | stable code plus message |
-| `done` | last | success or failure |
+| Message    | When                            | Notes                                                     |
+| ---------- | ------------------------------- | --------------------------------------------------------- |
+| `hello`    | first, within a startup timeout | carries protocol version, runner id, runner version       |
+| `manifest` | once, after `hello`             | runner-resolved defaults, merged into the stored manifest |
+| `metrics`  | repeatedly                      | a batch; rate-limited server side                         |
+| `artifact` | as produced                     | kind plus a path relative to the run directory            |
+| `error`    | after `hello`, before `done`    | stable code plus message                                  |
+| `done`     | last                            | success or failure                                        |
 
 A missing or late `hello`, an unknown message type, an incompatible protocol version, malformed
 JSON, or an oversized line all fail the run deterministically with a distinct error code.
@@ -277,8 +279,9 @@ and its bytes live under one directory named for it.
 
 `Artifacts.ts` mirrors `resolveAttachmentRelativePath` in `apps/server/src/attachmentPaths.ts:12`:
 normalize, reject `..` segments, null bytes, and absolute paths, resolve, then assert the result
-still sits under the run root. A client-supplied identifier can never escape its run and can never
-resolve an absolute host path.
+still sits under the run root. Artifact announcements and downloads also compare canonical real
+paths, so a symlink cannot escape the run. A client-supplied identifier can never resolve an
+absolute host path.
 
 The worker's environment is an explicit allowlist. Server credentials are not copied wholesale into
 the training process.
@@ -305,8 +308,8 @@ Python, or waits on wall-clock time. **A test that needs a timeout to pass is wr
 - `Manager.test.ts` — success, worker-reported failure, cancellation mid-run, stall, unexpected exit
   without `done`, metric coalescing under burst, subscriber fanout, snapshot-then-live correctness.
 - `Artifacts.test.ts` — traversal, absolute path, null byte, and symlink escape attempts.
-- `RunStore.test.ts` — round trips, restart sweep marking active runs `interrupted`, deletion.
-- `041_RlRuns.test.ts` — migration idempotency.
+- `RunStore.test.ts` — round trips, request idempotency, metrics/artifacts, and restart sweep marking
+  active runs `interrupted`.
 - One separately gated smoke test that runs the real `fake_worker.py` under `python3` to prove the
   spawn, discovery, and NDJSON path work outside the fake spawner.
 
@@ -334,9 +337,8 @@ Both T3RL proposal documents are uncommitted and are corrected in this increment
 
 No `docs/user/` change: this increment ships no user-visible behavior.
 
-## What this unlocks
+## What this unlocked
 
-With the kernel green, a real experiment becomes a definition file plus a runner that speaks the
-protocol. The drift-car environment and its verifiable reward function can then be designed as a
-research question rather than as a plumbing question, and a failure to learn will point at the
-reward, not the transport.
+The kernel now hosts the bundled PPO/`CartPole-v1` definition and Stable-Baselines3 worker without a
+framework-specific client contract. The next increment is the RL Lab UI over the existing
+capability, history, detail, start, cancel, subscription, and signed-artifact boundaries.

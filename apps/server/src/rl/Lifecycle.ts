@@ -24,11 +24,6 @@ const rejected = (state: RlRunState, event: RlLifecycleEvent): RlTransitionResul
   reason: `${event._tag} is not valid while ${state}`,
 });
 
-const ACTIVE_STATES = ["requested", "preparing", "running", "cancelling"] as const;
-
-const isActive = (state: RlRunState): boolean =>
-  (ACTIVE_STATES as ReadonlyArray<RlRunState>).includes(state);
-
 /**
  * Pure transition. Time is never read here — callers stamp their own timestamps
  * so that tests need neither a clock nor a delay.
@@ -51,7 +46,7 @@ export const transition = (state: RlRunState, event: RlLifecycleEvent): RlTransi
     // pending cancellation reached it produced a real result, and recording
     // `cancelled` would discard it.
     case "WorkerDone":
-      return isActive(state)
+      return state === "running" || state === "cancelling"
         ? accepted(event.success ? "completed" : "failed")
         : rejected(state, event);
 

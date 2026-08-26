@@ -26,6 +26,7 @@ import * as RlManager from "./Manager.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { RunStoreLive } from "./RunStore.ts";
 import { WorkerSpawnerLive } from "./WorkerSpawner.ts";
+import * as SourceEvidence from "./SourceEvidence.ts";
 
 const pythonAvailable = (() => {
   try {
@@ -53,6 +54,11 @@ const configLayer = Layer.effect(
 const smokeLayer = RlManager.RlManagerLive.pipe(
   Layer.provide(WorkerSpawnerLive),
   Layer.provide(CapabilitiesLive),
+  Layer.provide(
+    SourceEvidence.layerFromResolver(() =>
+      Effect.succeed({ workspaceRoot: repoRoot, sourceRevision: "smoke", sourceDirty: false }),
+    ),
+  ),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(Experiments.layerFromDirectory(`${repoRoot}python/t3rl_worker/experiments`)),
   Layer.provide(configLayer),
@@ -72,7 +78,7 @@ const awaitTerminal = (manager: RlManager.RlManagerShape, runId: string) =>
   Effect.gen(function* () {
     const reached = yield* Deferred.make<string>();
     const unsubscribe = yield* manager.subscribe({ runId }, (event) => {
-      if (event._tag === "Metrics") return;
+      if (event._tag !== "Snapshot" && event._tag !== "Lifecycle") return;
       if (TERMINAL.has(event.summary.state)) {
         Deferred.doneUnsafe(reached, Effect.succeed(event.summary.state));
       }
@@ -119,7 +125,10 @@ describe.skipIf(!pythonAvailable)("fake worker smoke", () => {
         yield* Effect.gen(function* () {
           const running = yield* Deferred.make<void>();
           const unsubscribe = yield* manager.subscribe({ runId }, (event) => {
-            if (event._tag !== "Metrics" && event.summary.state === "running") {
+            if (
+              (event._tag === "Snapshot" || event._tag === "Lifecycle") &&
+              event.summary.state === "running"
+            ) {
               Deferred.doneUnsafe(running, Effect.void);
             }
           });

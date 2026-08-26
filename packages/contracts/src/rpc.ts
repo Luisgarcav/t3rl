@@ -196,13 +196,17 @@ import {
   RlArtifactMetadata,
   RlCapabilityReport,
   RlExperimentId,
+  RlMetricBatch,
   RlResolvedManifest,
   RlRunId,
   RlRunNotFoundError,
+  RlRunRequestId,
   RlRunStartError,
   RlRunState,
   RlRunSummary,
   RlSubscriptionEvent,
+  RL_MAX_RUN_ARTIFACTS,
+  RL_MAX_SNAPSHOT_METRIC_BATCHES,
 } from "./rl.ts";
 import { VcsError } from "./vcs.ts";
 
@@ -1016,7 +1020,7 @@ export const WsRlListRunsRpc = Rpc.make(WS_METHODS.rlListRuns, {
       Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(Schema.isLessThanOrEqualTo(200)),
     ),
   }),
-  success: Schema.Struct({ runs: Schema.Array(RlRunSummary) }),
+  success: Schema.Struct({ runs: Schema.Array(RlRunSummary).check(Schema.isMaxLength(200)) }),
   error: EnvironmentAuthorizationError,
 });
 
@@ -1025,7 +1029,8 @@ export const WsRlGetRunRpc = Rpc.make(WS_METHODS.rlGetRun, {
   success: Schema.Struct({
     summary: RlRunSummary,
     manifest: Schema.NullOr(RlResolvedManifest),
-    artifacts: Schema.Array(RlArtifactMetadata),
+    artifacts: Schema.Array(RlArtifactMetadata).check(Schema.isMaxLength(RL_MAX_RUN_ARTIFACTS)),
+    metrics: Schema.Array(RlMetricBatch).check(Schema.isMaxLength(RL_MAX_SNAPSHOT_METRIC_BATCHES)),
   }),
   error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
 });
@@ -1035,6 +1040,7 @@ export const WsRlStartRunRpc = Rpc.make(WS_METHODS.rlStartRun, {
     projectId: TrimmedNonEmptyString,
     experimentId: RlExperimentId,
     seed: Schema.Int,
+    requestId: RlRunRequestId,
   }),
   success: Schema.Struct({ runId: RlRunId }),
   error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),

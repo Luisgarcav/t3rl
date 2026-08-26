@@ -1,8 +1,8 @@
 import {
   RL_WORKER_PROTOCOL_VERSION,
   RlArtifactKind,
+  RlErrorCode,
   RlMetricBatch,
-  type RlErrorCode,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -58,7 +58,7 @@ const ArtifactSchema = Schema.Struct({
 
 const ErrorSchema = Schema.Struct({
   type: Schema.Literals(["error"]),
-  code: Schema.String.check(Schema.isMaxLength(64)),
+  code: RlErrorCode,
   detail: Schema.String.check(Schema.isMaxLength(2048)),
 });
 
@@ -93,7 +93,7 @@ export const decodeWorkerLine = (line: string): RlWorkerDecodeResult => {
     return { _tag: "Ignored" };
   }
   if (Buffer.byteLength(line, "utf8") > MAX_WORKER_LINE_BYTES) {
-    return failure("MalformedWorkerMessage", "worker line exceeded the size limit");
+    return failure("WorkerMessageTooLarge", "worker line exceeded the size limit");
   }
 
   let parsed: unknown;
@@ -152,8 +152,8 @@ export const decodeWorkerLine = (line: string): RlWorkerDecodeResult => {
         ? failure("MalformedWorkerMessage", "invalid error message")
         : message({
             _tag: "Error",
-            code: "WorkerExited",
-            detail: `${error.code}: ${error.detail}`,
+            code: error.code,
+            detail: error.detail,
           });
     }
     case "done": {

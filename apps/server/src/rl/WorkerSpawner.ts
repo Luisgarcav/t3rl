@@ -73,8 +73,45 @@ const toLines = (
 ): Stream.Stream<string, WorkerStreamError> =>
   stream.pipe(
     Stream.mapError((cause) => new WorkerStreamError({ stream: which, cause })),
-    Stream.decodeText(),
-    Stream.splitLines,
+    Stream.mapAccum(
+      () => ({ pending: Buffer.alloc(0), discarding: false }),
+      (state, chunk) => {
+        let data = Buffer.from(chunk);
+        const lines: string[] = [];
+        if (state.discarding) {
+          const newline = data.indexOf(0x0a);
+          if (newline < 0) return [state, lines] as const;
+          data = data.subarray(newline + 1);
+          state = { pending: Buffer.alloc(0), discarding: false };
+        }
+        if (state.pending.byteLength > 0) data = Buffer.concat([state.pending, data]);
+
+        while (true) {
+          const newline = data.indexOf(0x0a);
+          if (newline < 0) break;
+          const line = data.subarray(
+            0,
+            newline > 0 && data[newline - 1] === 0x0d ? newline - 1 : newline,
+          );
+          lines.push(
+            line.byteLength > 64 * 1024
+              ? "x".repeat(64 * 1024 + 1)
+              : new TextDecoder().decode(line),
+          );
+          data = data.subarray(newline + 1);
+        }
+
+        if (data.byteLength > 64 * 1024) {
+          lines.push("x".repeat(64 * 1024 + 1));
+          return [{ pending: Buffer.alloc(0), discarding: true }, lines] as const;
+        }
+        return [{ pending: Buffer.from(data), discarding: false }, lines] as const;
+      },
+      {
+        onHalt: (state) =>
+          state.pending.byteLength === 0 ? [] : [new TextDecoder().decode(state.pending)],
+      },
+    ),
   );
 
 const makeWorkerSpawner = Effect.gen(function* () {

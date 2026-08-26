@@ -64,15 +64,19 @@ def emit_hello(protocol: int = PROTOCOL_VERSION) -> None:
 
 
 def emit_manifest(args: argparse.Namespace) -> None:
+    values = dict(args.config_json)
+    values.update(
+        {
+            "scenario": args.scenario,
+            "seed": args.seed,
+            "steps": METRIC_STEPS,
+            "pythonVersion": "%d.%d" % sys.version_info[:2],
+        }
+    )
     emit(
         {
             "type": "manifest",
-            "values": {
-                "scenario": args.scenario,
-                "seed": args.seed,
-                "steps": METRIC_STEPS,
-                "pythonVersion": "%d.%d" % sys.version_info[:2],
-            },
+            "values": values,
         }
     )
 
@@ -174,6 +178,7 @@ def main() -> int:
     )
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--config-json", default="{}", type=json.loads)
     return run(parser.parse_args())
 
 

@@ -1,9 +1,12 @@
 {
   "experimentId": "fake-ignore-cancel",
+  "displayName": "Unresponsive fake worker",
+  "description": "Exercises cancellation escalation without training a policy.",
   "runnerId": "fake",
   "instrumentationLevel": "minimal",
   "defaultSeed": 7,
-  "entrypoint": "python/t3rl_worker/fake_worker.py",
+  "entrypoint": "../fake_worker.py",
   "scenario": "ignore-cancel",
+  "maxRuntimeSeconds": 60,
   "config": {}
 }

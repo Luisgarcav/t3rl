@@ -208,6 +208,50 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("serves an RL artifact only from its canonical run directory", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const runRoot = path.join(config.rlRunsDir, "run_01");
+      const artifactPath = path.join(runRoot, "summary.json");
+      yield* fileSystem.makeDirectory(runRoot, { recursive: true });
+      yield* fileSystem.writeFileString(artifactPath, "{}");
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "rl-artifact", runId: "run_01", artifactId: "art_01" },
+        rlArtifactRelativePath: "summary.json",
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const token = suffix.slice(0, suffix.indexOf("/"));
+      expect(yield* resolveAsset(token, "summary.json")).toEqual({
+        kind: "file",
+        path: yield* fileSystem.realPath(artifactPath),
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects a signed RL artifact path that becomes a symlink escape", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const runRoot = path.join(config.rlRunsDir, "run_02");
+      const outside = path.join(config.rlRunsDir, "outside-secret.txt");
+      yield* fileSystem.makeDirectory(runRoot, { recursive: true });
+      yield* fileSystem.writeFileString(outside, "secret");
+      yield* fileSystem.symlink(outside, path.join(runRoot, "summary.json"));
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "rl-artifact", runId: "run_02", artifactId: "art_02" },
+        rlArtifactRelativePath: "summary.json",
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const token = suffix.slice(0, suffix.indexOf("/"));
+      expect(yield* resolveAsset(token, "summary.json")).toBeNull();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("issues project favicon capabilities with a signed fallback", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

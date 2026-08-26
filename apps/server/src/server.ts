@@ -1,4 +1,5 @@
 import { EnvironmentHttpApi } from "@t3tools/contracts";
+import * as NodeURL from "node:url";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -48,7 +49,9 @@ import * as RlCapabilities from "./rl/Capabilities.ts";
 import * as RlExperiments from "./rl/Experiments.ts";
 import * as RlManager from "./rl/Manager.ts";
 import * as RlRunStore from "./rl/RunStore.ts";
+import * as RlSourceEvidence from "./rl/SourceEvidence.ts";
 import * as RlWorkerSpawner from "./rl/WorkerSpawner.ts";
+import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -337,13 +340,21 @@ const TerminalLayerLive = TerminalManager.layer.pipe(
  * directory is resolved relative to this module rather than to the user's
  * project or the process working directory.
  */
-const RL_EXPERIMENTS_DIR = new URL("../../../python/t3rl_worker/experiments", import.meta.url)
-  .pathname;
+const RL_EXPERIMENTS_DIRS = [
+  NodeURL.fileURLToPath(new URL("./t3rl_worker/experiments", import.meta.url)),
+  NodeURL.fileURLToPath(new URL("../../../python/t3rl_worker/experiments", import.meta.url)),
+];
 
 const RlLayerLive = RlManager.RlManagerLive.pipe(
   Layer.provide(RlWorkerSpawner.WorkerSpawnerLive),
   Layer.provide(RlCapabilities.CapabilitiesLive.pipe(Layer.provide(ProcessRunner.layer))),
-  Layer.provide(RlExperiments.layerFromDirectory(RL_EXPERIMENTS_DIR)),
+  Layer.provide(RlExperiments.layerFromDirectories(RL_EXPERIMENTS_DIRS)),
+  Layer.provide(
+    RlSourceEvidence.SourceEvidenceLive.pipe(
+      Layer.provide(ProjectionProjectRepositoryLive),
+      Layer.provide(ProcessRunner.layer),
+    ),
+  ),
   Layer.provideMerge(RlRunStore.RunStoreLive),
 );
 
@@ -654,9 +665,9 @@ export const makeServerLayer = Layer.unwrap(
                   Schedule.upTo({ duration: "10 minutes" }),
                 ),
               }),
-              Effect.tap(() => Effect.logInfo("T3 Connect desired link reconciled on startup")),
+              Effect.tap(() => Effect.logInfo("t3RL Connect desired link reconciled on startup")),
               Effect.catch((cause) =>
-                Effect.logWarning("Failed to reconcile T3 Connect desired link on startup", {
+                Effect.logWarning("Failed to reconcile t3RL Connect desired link on startup", {
                   cause,
                 }),
               ),

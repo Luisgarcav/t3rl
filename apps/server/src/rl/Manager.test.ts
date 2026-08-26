@@ -1,10 +1,12 @@
 // @effect-diagnostics preferSchemaOverJson:off - hand-written worker stdout fixtures.
+import type { RlSubscriptionEvent } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import { describe } from "vite-plus/test";
 
@@ -14,6 +16,7 @@ import { Capabilities, type CapabilitiesShape } from "./Capabilities.ts";
 import * as Experiments from "./Experiments.ts";
 import * as RlManager from "./Manager.ts";
 import { RunStoreLive } from "./RunStore.ts";
+import * as SourceEvidence from "./SourceEvidence.ts";
 import { FakeWorkerProcess, fakeWorkerSpawnerLayer } from "./testing/FakeWorkerSpawner.ts";
 
 const hello = JSON.stringify({
@@ -22,6 +25,13 @@ const hello = JSON.stringify({
   runner: "fake",
   runnerVersion: "0.1.0",
 });
+
+const workerManifest = JSON.stringify({ type: "manifest", values: {} });
+
+const emitReady = (worker: FakeWorkerProcess) => {
+  worker.emitStdout(hello);
+  worker.emitStdout(workerManifest);
+};
 
 const metrics = (step: number, value: number) =>
   JSON.stringify({
@@ -33,11 +43,14 @@ const metrics = (step: number, value: number) =>
 
 const fakeDefinition: Experiments.RlExperimentDefinition = {
   experimentId: "fake",
+  displayName: "Fake",
+  description: "Test worker",
   runnerId: "fake",
   instrumentationLevel: "minimal",
   defaultSeed: 7,
   entrypoint: "python/t3rl_worker/fake_worker.py",
   scenario: "success",
+  maxRuntimeSeconds: 3600,
   config: {},
 };
 
@@ -55,8 +68,17 @@ const capabilitiesLayer = Layer.succeed(
             remedy: null,
           },
         ],
+        experiments: [],
       }),
     resolvePython: () => Effect.succeed({ executable: "python3", version: "3.12.4" }),
+    resolveRunner: () =>
+      Effect.succeed({
+        executable: "python3",
+        version: "3.12.4",
+        runnerId: "fake",
+        runnerVersion: "0.1.0",
+        environmentFingerprint: "fake-fingerprint",
+      }),
   } satisfies CapabilitiesShape),
 );
 
@@ -82,6 +104,11 @@ const makeLayer = (worker: FakeWorkerProcess) =>
   RlManager.RlManagerLive.pipe(
     Layer.provide(fakeWorkerSpawnerLayer(worker)),
     Layer.provide(capabilitiesLayer),
+    Layer.provide(
+      SourceEvidence.layerFromResolver(() =>
+        Effect.succeed({ workspaceRoot: "/tmp", sourceRevision: "abc123", sourceDirty: false }),
+      ),
+    ),
     Layer.provide(Experiments.layerFromRecord({ fake: fakeDefinition })),
     Layer.provide(configLayer),
     Layer.provideMerge(RunStoreLive),
@@ -119,7 +146,8 @@ const awaitState = (
   Effect.gen(function* () {
     const reached = yield* Deferred.make<string>();
     const unsubscribe = yield* manager.subscribe({ runId }, (event) => {
-      const state = event._tag === "Metrics" ? null : event.summary.state;
+      const state =
+        event._tag === "Snapshot" || event._tag === "Lifecycle" ? event.summary.state : null;
       if (state !== null && predicate(state)) {
         Deferred.doneUnsafe(reached, Effect.succeed(state));
       }
@@ -130,6 +158,17 @@ const awaitState = (
 const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const awaitTerminal = (manager: RlManager.RlManagerShape, runId: string) =>
   awaitState(manager, runId, (state) => TERMINAL.has(state));
+
+const awaitManifest = (manager: RlManager.RlManagerShape, runId: string) =>
+  Effect.gen(function* () {
+    const received = yield* Deferred.make<void>();
+    const unsubscribe = yield* manager.subscribe({ runId }, (event) => {
+      if (event._tag === "Manifest" || (event._tag === "Snapshot" && event.manifest !== null)) {
+        Deferred.doneUnsafe(received, Effect.void);
+      }
+    });
+    yield* Deferred.await(received).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
+  });
 
 describe("RlManager", () => {
   it.effect("reaches running only after hello, and completed only after done", () =>
@@ -148,11 +187,17 @@ describe("RlManager", () => {
           const preparing = yield* manager.get({ runId });
           assert.strictEqual(preparing.summary.state, "preparing");
 
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
-          assert.strictEqual((yield* manager.get({ runId })).summary.state, "running");
+          yield* awaitManifest(manager, runId);
+          const running = yield* manager.get({ runId });
+          assert.strictEqual(running.summary.state, "running");
+          assert.strictEqual(running.manifest?.sourceRevision, "abc123");
+          assert.strictEqual(running.manifest?.sourceDirty, false);
+          assert.strictEqual(worker.spawnInputs[0]?.cwd, "/tmp");
 
           worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
           yield* awaitTerminal(manager, runId);
           assert.strictEqual((yield* manager.get({ runId })).summary.state, "completed");
         }),
@@ -160,7 +205,7 @@ describe("RlManager", () => {
     }),
   );
 
-  it.effect("never reports completion from a quiet metric stream", () =>
+  it.effect("fails a quiet metric stream as stalled instead of reporting completion", () =>
     Effect.gen(function* () {
       const worker = new FakeWorkerProcess();
       yield* withWorker(
@@ -172,17 +217,18 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           worker.emitStdout(metrics(1, 1));
           yield* awaitState(manager, runId, (state) => state === "running");
 
-          // A long silence is not an ending. Nothing to await here — the point
-          // is that no transition happens — so time is advanced and the state
-          // re-read.
+          // A quiet stream is never success; after the liveness deadline it is
+          // an explicit worker stall and the captured process is terminated.
           yield* TestClock.adjust("10 minutes");
-          yield* settle;
+          yield* awaitTerminal(manager, runId);
 
-          assert.strictEqual((yield* manager.get({ runId })).summary.state, "running");
+          const detail = yield* manager.get({ runId });
+          assert.strictEqual(detail.summary.state, "failed");
+          assert.strictEqual(detail.summary.errorCode, "WorkerStalled");
         }),
       );
     }),
@@ -200,7 +246,7 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
           // Exit code 0 is still a failure: the worker never claimed to finish.
@@ -210,6 +256,80 @@ describe("RlManager", () => {
           const detail = yield* manager.get({ runId });
           assert.strictEqual(detail.summary.state, "failed");
           assert.strictEqual(detail.summary.errorCode, "WorkerExited");
+        }),
+      );
+    }),
+  );
+
+  it.effect("requires exit zero after done before recording completion", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(9);
+          yield* awaitTerminal(manager, runId);
+
+          const detail = yield* manager.get({ runId });
+          assert.strictEqual(detail.summary.state, "failed");
+          assert.strictEqual(detail.summary.errorCode, "RunnerException");
+        }),
+      );
+    }),
+  );
+
+  it.effect("fails and stops a worker that emits metrics before hello", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          worker.emitStdout(metrics(1, 1));
+          yield* awaitTerminal(manager, runId);
+          yield* worker.awaitKills(1);
+
+          const detail = yield* manager.get({ runId });
+          assert.strictEqual(detail.summary.errorCode, "MalformedWorkerMessage");
+          assert.deepStrictEqual(worker.killSignals, ["SIGTERM"]);
+        }),
+      );
+    }),
+  );
+
+  it.effect("times out a worker that never sends hello", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          yield* TestClock.adjust(RlManager.STARTUP_TIMEOUT);
+          yield* awaitTerminal(manager, runId);
+          yield* worker.awaitKills(1);
+          assert.strictEqual(
+            (yield* manager.get({ runId })).summary.errorCode,
+            "WorkerHelloTimeout",
+          );
         }),
       );
     }),
@@ -252,7 +372,7 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
           yield* manager.cancel({ runId });
@@ -283,7 +403,7 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
           yield* manager.cancel({ runId });
@@ -292,8 +412,8 @@ describe("RlManager", () => {
           // The worker finished on its own before the signal landed. That is a
           // real result and must not be discarded as a cancellation.
           worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
-          yield* awaitTerminal(manager, runId);
           worker.exit(0);
+          yield* awaitTerminal(manager, runId);
 
           assert.strictEqual((yield* manager.get({ runId })).summary.state, "completed");
         }),
@@ -313,7 +433,7 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
           const received: number[] = [];
@@ -352,19 +472,123 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
-          const tags: string[] = [];
-          yield* manager.subscribe({ runId }, (event) => tags.push(event._tag));
+          worker.emitStdout(metrics(1, 42));
+          yield* settle;
+          yield* TestClock.adjust("1 second");
+          yield* settle;
 
-          assert.strictEqual(tags[0], "Snapshot");
+          const events: RlSubscriptionEvent[] = [];
+          yield* manager.subscribe({ runId }, (event) => events.push(event));
+
+          assert.strictEqual(events[0]?._tag, "Snapshot");
+          const snapshot = events[0];
+          assert.isTrue(snapshot?._tag === "Snapshot" && snapshot.metrics.length === 1);
 
           worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
           yield* awaitTerminal(manager, runId);
 
-          assert.isTrue(tags.includes("Lifecycle"));
+          assert.isTrue(events.some((event) => event._tag === "Lifecycle"));
         }),
+      );
+    }),
+  );
+
+  it.effect("keeps a long-lived subscriber through more than 256 metric events", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+
+          let metricEvents = 0;
+          let completed = false;
+          yield* manager.subscribe({ runId }, (event) => {
+            if (event._tag === "Metrics") metricEvents += 1;
+            if (event._tag === "Lifecycle" && event.summary.state === "completed") completed = true;
+          });
+          for (let step = 1; step <= 260; step += 1) {
+            worker.emitStdout(metrics(step, step));
+            yield* TestClock.adjust("500 millis");
+            yield* settle;
+          }
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
+          yield* awaitTerminal(manager, runId);
+
+          assert.isAtLeast(metricEvents, 257);
+          assert.isTrue(completed);
+        }),
+      );
+    }),
+  );
+
+  it.effect("deduplicates a retried start request", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const input = {
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+            requestId: "request_01",
+          };
+          const first = yield* manager.start(input);
+          const retry = yield* manager.start(input);
+          assert.strictEqual(retry.runId, first.runId);
+          assert.strictEqual(worker.spawnInputs.length, 1);
+        }),
+      );
+    }),
+  );
+
+  it.effect("rejects an artifact symlink that resolves outside the run", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          const spawn = worker.spawnInputs[0];
+          const runDirIndex = spawn?.args.indexOf("--run-dir") ?? -1;
+          const runDir = spawn?.args[runDirIndex + 1];
+          assert.isString(runDir);
+          const outside = path.join(path.dirname(runDir!), "outside.json");
+          yield* fs.writeFileString(outside, "secret");
+          yield* fs.symlink(outside, path.join(runDir!, "escape.json"));
+
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+          worker.emitStdout(
+            JSON.stringify({ type: "artifact", kind: "summary", path: "escape.json" }),
+          );
+          yield* awaitTerminal(manager, runId);
+          assert.strictEqual(
+            (yield* manager.get({ runId })).summary.errorCode,
+            "MalformedWorkerMessage",
+          );
+        }).pipe(Effect.provide(NodeServices.layer)),
       );
     }),
   );
@@ -381,7 +605,7 @@ describe("RlManager", () => {
             experimentId: "fake",
             seed: 7,
           });
-          worker.emitStdout(hello);
+          emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
           // Far more than the cap; the manager must drop oldest, not grow.
@@ -415,10 +639,10 @@ describe("RlManager", () => {
           );
           assert.isTrue(exit._tag === "Failure");
 
-          // The capability failure is visible before any process existed.
+          // The invalid definition is visible before any process existed.
           const { runs } = yield* manager.list({ projectId: "proj_01" });
           assert.strictEqual(runs[0]?.state, "failed");
-          assert.strictEqual(runs[0]?.errorCode, "RunnerUnavailable");
+          assert.strictEqual(runs[0]?.errorCode, "InvalidExperiment");
           assert.strictEqual(worker.spawnInputs.length, 0);
         }),
       );

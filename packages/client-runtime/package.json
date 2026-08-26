@@ -39,6 +39,14 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
+    "./research": {
+      "types": "./src/research.ts",
+      "default": "./src/research.ts"
+    },
+    "./research-algorithms": {
+      "types": "./src/researchAlgorithms.ts",
+      "default": "./src/researchAlgorithms.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"
@@ -94,6 +102,10 @@
     "./state/relay": {
       "types": "./src/state/relayDiscovery.ts",
       "default": "./src/state/relayDiscovery.ts"
+    },
+    "./state/rl": {
+      "types": "./src/state/rl.ts",
+      "default": "./src/state/rl.ts"
     },
     "./state/review": {
       "types": "./src/state/review.ts",

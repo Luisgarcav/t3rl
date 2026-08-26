@@ -4,12 +4,16 @@ import {
   Bot,
   FileDiff,
   Files,
+  FlaskConical,
   GitPullRequest,
   Globe2,
+  type LucideIcon,
+  Microscope,
   Plus,
   TerminalSquare,
   Volume2,
   VolumeOff,
+  Workflow,
   X,
 } from "lucide-react";
 import {
@@ -31,7 +35,15 @@ import { readLocalApi } from "~/localApi";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
@@ -74,12 +86,18 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddExperiments: () => void;
+  onAddSpecialists: () => void;
+  onAddAutoresearch: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  experimentsAvailable: boolean;
+  specialistsAvailable: boolean;
+  autoresearchAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -95,12 +113,15 @@ export interface PullRequestTabStatus {
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the T3 Code desktop app.",
+  browser: "Browser previews are only available in the t3RL desktop app.",
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
+  experiments: "Experiments are only available when an RL project is open.",
+  specialists: "Specialists are only available when a project is open.",
+  autoresearch: "Autoresearch is only available when a project is open.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -123,6 +144,9 @@ const SURFACE_UNAVAILABLE_HINTS = {
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
   agents: "Available from a thread.",
+  experiments: "Available when a project is open.",
+  specialists: "Available when a project is open.",
+  autoresearch: "Available when a project is open.",
 } as const;
 
 type TabContextMenuAction =
@@ -201,6 +225,78 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
+interface SurfaceLauncherAction {
+  readonly label: string;
+  readonly description: string;
+  readonly icon: LucideIcon;
+  readonly shortcut: string;
+  readonly available: boolean;
+  readonly disabledReason: string;
+  readonly onClick: () => void;
+  readonly badgeCount: number;
+}
+
+function SurfaceLauncherCard(props: {
+  readonly action: SurfaceLauncherAction;
+  readonly highlighted: boolean;
+  readonly onHighlight: () => void;
+  readonly onUnhighlight: () => void;
+}) {
+  const Icon = props.action.icon;
+  const icon = (
+    <span className="relative inline-flex shrink-0">
+      <Icon className="size-4" />
+      {props.action.badgeCount > 0 ? (
+        <span
+          aria-hidden
+          className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+        >
+          {props.action.badgeCount}
+        </span>
+      ) : null}
+    </span>
+  );
+  const content = (
+    <>
+      <Kbd className="absolute top-2.5 right-2.5">{props.action.shortcut}</Kbd>
+      <span className="flex items-center gap-2 pe-8">
+        {icon}
+        <span className="font-medium text-sm">{props.action.label}</span>
+      </span>
+      <span className="mt-1 text-muted-foreground text-xs leading-relaxed">
+        {props.action.available ? props.action.description : props.action.disabledReason}
+      </span>
+    </>
+  );
+  const cardShellClass =
+    "rounded-lg border border-border/80 bg-card dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5";
+
+  if (!props.action.available) {
+    return (
+      <div
+        className={cn("relative flex w-full flex-col items-start p-3 opacity-40", cardShellClass)}
+      >
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      className={cn(
+        "relative flex w-full cursor-pointer flex-col items-start p-3 text-left transition hover:border-border hover:bg-accent/60",
+        cardShellClass,
+        props.highlighted && "bg-accent/60 dark:inset-ring-white/20",
+      )}
+      type="button"
+      onClick={props.action.onClick}
+      onMouseEnter={props.onHighlight}
+      onMouseLeave={props.onUnhighlight}
+    >
+      {content}
+    </button>
+  );
+}
+
 /**
  * Card launcher shown when the right panel has no surfaces. Keyboard-first
  * without palette chrome: a surface's letter opens it directly from anywhere
@@ -215,12 +311,18 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddExperiments: () => void;
+  onAddSpecialists: () => void;
+  onAddAutoresearch: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  experimentsAvailable: boolean;
+  specialistsAvailable: boolean;
+  autoresearchAvailable: boolean;
   liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
@@ -287,11 +389,50 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
     },
-  ] as const;
+    {
+      label: "Experiments",
+      description: "Run, compare, and diagnose RL experiments.",
+      icon: FlaskConical,
+      shortcut: "E",
+      available: props.experimentsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.experiments,
+      onClick: props.onAddExperiments,
+      badgeCount: 0,
+    },
+    {
+      label: "Specialists",
+      description: "Edit reusable scientific agent roles.",
+      icon: Microscope,
+      shortcut: "S",
+      available: props.specialistsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.specialists,
+      onClick: props.onAddSpecialists,
+      badgeCount: 0,
+    },
+    {
+      label: "Autoresearch",
+      description: "Prepare one bounded, review-gated iteration.",
+      icon: Workflow,
+      shortcut: "R",
+      available: props.autoresearchAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.autoresearch,
+      onClick: props.onAddAutoresearch,
+      badgeCount: 0,
+    },
+  ] as const satisfies ReadonlyArray<SurfaceLauncherAction>;
 
   type SurfaceAction = (typeof actions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const actionGroups: ReadonlyArray<{
+    readonly label: string;
+    readonly actions: ReadonlyArray<SurfaceAction>;
+  }> = [
+    { label: "Runtime", actions: [actions[0], actions[1], actions[5]] },
+    { label: "Workspace", actions: [actions[2], actions[3], actions[4]] },
+    { label: "Research", actions: [actions[6], actions[8], actions[7]] },
+  ];
+  const orderedActions = actionGroups.flatMap((group) => group.actions);
+  const availableActions = orderedActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -365,27 +506,6 @@ function RightPanelEmptyState(props: {
   const isHighlighted = (action: SurfaceAction) =>
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
 
-  const actionIcon = (action: SurfaceAction, iconClassName = "size-4") => {
-    const Icon = action.icon;
-    return (
-      <span className="relative inline-flex shrink-0">
-        <Icon className={iconClassName} />
-        {action.badgeCount > 0 ? (
-          <span
-            aria-hidden
-            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
-          >
-            {action.badgeCount}
-          </span>
-        ) : null}
-      </span>
-    );
-  };
-
-  const cardShellClass =
-    "rounded-lg border border-border/80 bg-card dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5";
-  const highlightedCardClass = "bg-accent/60 dark:inset-ring-white/20";
-
   return (
     <div
       ref={focusOnMount}
@@ -394,66 +514,45 @@ function RightPanelEmptyState(props: {
       aria-label="Open a surface"
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
-        "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pt-6 outline-none",
+        "flex min-h-0 flex-1 justify-center overflow-y-auto px-6 pt-6 outline-none",
         // The panel topbar sits above this container; matching bottom padding
         // keeps the cards centered against the full panel, not the leftover.
         "pb-[calc(var(--workspace-topbar-height)+--spacing(6))]",
       )}
     >
-      <div className="relative w-full max-w-lg">
-        <div className="absolute inset-x-0 bottom-full mb-5 text-center">
+      <div className="my-auto w-full max-w-lg py-5">
+        <div className="mb-4 text-center">
           <h3 className="font-medium text-foreground text-sm">Open a surface</h3>
           <p className="mt-1 text-muted-foreground text-xs">
             Choose what to show in the right panel.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) =>
-            action.available ? (
-              <button
-                key={action.label}
-                type="button"
-                onClick={action.onClick}
-                onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
-                onMouseLeave={() =>
-                  setHighlight((current) =>
-                    current === availableActions.indexOf(action) ? -1 : current,
-                  )
-                }
-                className={cn(
-                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
-                  cardShellClass,
-                  isHighlighted(action) && highlightedCardClass,
-                )}
+        <div className="space-y-4">
+          {actionGroups.map((group) => (
+            <section aria-labelledby={`surface-group-${group.label}`} key={group.label}>
+              <h4
+                className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                id={`surface-group-${group.label}`}
               >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
-                </span>
-              </button>
-            ) : (
-              <div
-                key={action.label}
-                className={cn(
-                  "relative flex w-full flex-col items-start p-4 opacity-40",
-                  cardShellClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.disabledReason}
-                </span>
+                {group.label}
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                {group.actions.map((action) => (
+                  <SurfaceLauncherCard
+                    action={action}
+                    highlighted={isHighlighted(action)}
+                    key={action.label}
+                    onHighlight={() => setHighlight(availableActions.indexOf(action))}
+                    onUnhighlight={() =>
+                      setHighlight((current) =>
+                        current === availableActions.indexOf(action) ? -1 : current,
+                      )
+                    }
+                  />
+                ))}
               </div>
-            ),
-          )}
+            </section>
+          ))}
         </div>
       </div>
     </div>
@@ -481,6 +580,12 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
+    case "experiments":
+      return "Experiments";
+    case "specialists":
+      return "Specialists";
+    case "autoresearch":
+      return "Autoresearch";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -566,6 +671,12 @@ function SurfaceIcon({
     }
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "experiments":
+      return <FlaskConical className="size-3 shrink-0" />;
+    case "specialists":
+      return <Microscope className="size-3 shrink-0" />;
+    case "autoresearch":
+      return <Workflow className="size-3 shrink-0" />;
   }
 }
 
@@ -818,54 +929,89 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <Plus className="size-3.5" />
                 </MenuTrigger>
                 <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
-                  <SurfaceMenuItem
-                    available={props.browserAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
-                  >
-                    <Globe2 />
-                    Browser
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.terminalAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.terminal}
-                    onClick={props.onAddTerminal}
-                  >
-                    <TerminalSquare />
-                    Terminal
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.filesAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.files}
-                    onClick={props.onAddFiles}
-                  >
-                    <Files />
-                    Files
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.diffAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.diff}
-                    onClick={props.onAddDiff}
-                  >
-                    <FileDiff />
-                    Diff
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.pullRequestAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
-                    onClick={props.onAddPullRequest}
-                  >
-                    <GitPullRequest />
-                    Pull request
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.agentsAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.agents}
-                    onClick={props.onAddAgents}
-                  >
-                    <Bot />
-                    Agents
-                  </SurfaceMenuItem>
+                  <MenuGroup>
+                    <MenuGroupLabel>Runtime</MenuGroupLabel>
+                    <SurfaceMenuItem
+                      available={props.browserAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.browser}
+                      onClick={props.onAddBrowser}
+                    >
+                      <Globe2 />
+                      Browser
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.terminalAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.terminal}
+                      onClick={props.onAddTerminal}
+                    >
+                      <TerminalSquare />
+                      Terminal
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.agentsAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.agents}
+                      onClick={props.onAddAgents}
+                    >
+                      <Bot />
+                      Agents
+                    </SurfaceMenuItem>
+                  </MenuGroup>
+                  <MenuSeparator />
+                  <MenuGroup>
+                    <MenuGroupLabel>Workspace</MenuGroupLabel>
+                    <SurfaceMenuItem
+                      available={props.filesAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.files}
+                      onClick={props.onAddFiles}
+                    >
+                      <Files />
+                      Files
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.diffAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.diff}
+                      onClick={props.onAddDiff}
+                    >
+                      <FileDiff />
+                      Diff
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.pullRequestAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
+                      onClick={props.onAddPullRequest}
+                    >
+                      <GitPullRequest />
+                      Pull request
+                    </SurfaceMenuItem>
+                  </MenuGroup>
+                  <MenuSeparator />
+                  <MenuGroup>
+                    <MenuGroupLabel>Research</MenuGroupLabel>
+                    <SurfaceMenuItem
+                      available={props.experimentsAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.experiments}
+                      onClick={props.onAddExperiments}
+                    >
+                      <FlaskConical />
+                      Experiments
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.autoresearchAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.autoresearch}
+                      onClick={props.onAddAutoresearch}
+                    >
+                      <Workflow />
+                      Autoresearch
+                    </SurfaceMenuItem>
+                    <SurfaceMenuItem
+                      available={props.specialistsAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.specialists}
+                      onClick={props.onAddSpecialists}
+                    >
+                      <Microscope />
+                      Specialists
+                    </SurfaceMenuItem>
+                  </MenuGroup>
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -882,12 +1028,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
+            onAddExperiments={props.onAddExperiments}
+            onAddSpecialists={props.onAddSpecialists}
+            onAddAutoresearch={props.onAddAutoresearch}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
+            experimentsAvailable={props.experimentsAvailable}
+            specialistsAvailable={props.specialistsAvailable}
+            autoresearchAvailable={props.autoresearchAvailable}
             liveAgentCount={props.liveAgentCount}
           />
         ) : (

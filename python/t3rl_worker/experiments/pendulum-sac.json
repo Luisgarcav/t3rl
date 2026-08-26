@@ -1,0 +1,29 @@
+{
+  "experimentId": "pendulum-sac",
+  "displayName": "SAC on Pendulum-v1",
+  "description": "Train a CPU maximum-entropy SAC policy and evaluate deterministic Pendulum episodes.",
+  "runnerId": "stable-baselines3",
+  "instrumentationLevel": "standard",
+  "defaultSeed": 7,
+  "entrypoint": "../sb3_worker.py",
+  "maxRuntimeSeconds": 3600,
+  "config": {
+    "algorithm": "SAC",
+    "environment": "Pendulum-v1",
+    "policy": "MlpPolicy",
+    "device": "cpu",
+    "totalTimesteps": 50000,
+    "learningRate": 0.0003,
+    "gamma": 0.99,
+    "bufferSize": 100000,
+    "learningStarts": 1000,
+    "batchSize": 256,
+    "tau": 0.005,
+    "trainFrequency": 1,
+    "gradientSteps": 1,
+    "entropyCoefficient": 0.2,
+    "evaluationEpisodes": 10,
+    "evaluationSeedOffset": 100000,
+    "maxEvaluationSteps": 500
+  }
+}

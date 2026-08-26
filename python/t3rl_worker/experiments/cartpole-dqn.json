@@ -1,0 +1,33 @@
+{
+  "experimentId": "cartpole-dqn",
+  "displayName": "DQN on CartPole-v1",
+  "description": "Train a CPU DQN policy with replay and evaluate it on separately seeded CartPole episodes.",
+  "runnerId": "stable-baselines3",
+  "instrumentationLevel": "standard",
+  "defaultSeed": 7,
+  "entrypoint": "../sb3_worker.py",
+  "maxRuntimeSeconds": 1800,
+  "config": {
+    "algorithm": "DQN",
+    "environment": "CartPole-v1",
+    "policy": "MlpPolicy",
+    "device": "cpu",
+    "totalTimesteps": 50000,
+    "learningRate": 0.0001,
+    "gamma": 0.99,
+    "bufferSize": 100000,
+    "learningStarts": 1000,
+    "batchSize": 64,
+    "tau": 1.0,
+    "trainFrequency": 4,
+    "gradientSteps": 1,
+    "targetUpdateInterval": 1000,
+    "explorationFraction": 0.1,
+    "explorationInitialEpsilon": 1.0,
+    "explorationFinalEpsilon": 0.05,
+    "maxGradNorm": 10.0,
+    "evaluationEpisodes": 10,
+    "evaluationSeedOffset": 100000,
+    "maxEvaluationSteps": 500
+  }
+}

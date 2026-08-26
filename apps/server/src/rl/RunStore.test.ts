@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { RunStore, RunStoreLive } from "./RunStore.ts";
@@ -31,6 +32,46 @@ runStoreLayer("RunStore", (it) => {
       assert.strictEqual(runs[0]?.state, "requested");
       assert.strictEqual(runs[0]?.endedAt, null);
       assert.strictEqual(runs[0]?.startedAt, null);
+    }),
+  );
+
+  it.effect("returns the original run for a repeated client request", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const input = {
+        runId: "run_idempotent_01",
+        projectId: "proj_idempotent",
+        experimentId: "fake",
+        requestedAt,
+        requestId: "request_01",
+      };
+      const first = yield* store.insertRequested(input);
+      const retry = yield* store.insertRequested({ ...input, runId: "run_idempotent_02" });
+
+      assert.deepStrictEqual(first, { runId: "run_idempotent_01", inserted: true });
+      assert.deepStrictEqual(retry, { runId: "run_idempotent_01", inserted: false });
+    }),
+  );
+
+  it.effect("fails if an ignored insert has no matching client request", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO rl_runs (run_id, project_id, experiment_id, state, requested_at)
+        VALUES ('run_collision', 'proj_existing', 'fake', 'requested', ${requestedAt})
+      `;
+
+      const exit = yield* Effect.exit(
+        store.insertRequested({
+          runId: "run_collision",
+          projectId: "proj_other",
+          experimentId: "fake",
+          requestedAt,
+          requestId: "request_collision",
+        }),
+      );
+      assert.isTrue(exit._tag === "Failure");
     }),
   );
 
@@ -214,13 +255,14 @@ sweepLayer("RunStore restart sweep", (it) => {
       assert.strictEqual(swept, 3);
 
       const runs = yield* store.listRuns({ projectId: "proj_sweep", limit: 10 });
-      const byId = new Map(runs.map((run) => [run.runId, run.state]));
-      assert.strictEqual(byId.get("run_active"), "interrupted");
-      assert.strictEqual(byId.get("run_prep"), "interrupted");
-      assert.strictEqual(byId.get("run_cancelling"), "interrupted");
+      const byId = new Map(runs.map((run) => [run.runId, run]));
+      assert.strictEqual(byId.get("run_active")?.state, "interrupted");
+      assert.strictEqual(byId.get("run_prep")?.state, "interrupted");
+      assert.strictEqual(byId.get("run_cancelling")?.state, "interrupted");
+      assert.strictEqual(byId.get("run_active")?.errorCode, "ServerInterrupted");
       // A finished run keeps its result: a restart must not rewrite history.
-      assert.strictEqual(byId.get("run_done"), "completed");
-      assert.strictEqual(byId.get("run_failed"), "failed");
+      assert.strictEqual(byId.get("run_done")?.state, "completed");
+      assert.strictEqual(byId.get("run_failed")?.state, "failed");
     }),
   );
 });

@@ -89,6 +89,9 @@ function renderTabs(
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
+      onAddExperiments={() => undefined}
+      onAddSpecialists={() => undefined}
+      onAddAutoresearch={() => undefined}
       liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
@@ -96,6 +99,50 @@ function renderTabs(
       filesAvailable={false}
       pullRequestAvailable={false}
       agentsAvailable={false}
+      experimentsAvailable={false}
+      specialistsAvailable={false}
+      autoresearchAvailable={false}
+    >
+      <div>content</div>
+    </RightPanelTabs>,
+  );
+}
+
+function renderEmptyLauncher() {
+  return renderToStaticMarkup(
+    <RightPanelTabs
+      mode="inline"
+      surfaces={[]}
+      activeSurfaceId={null}
+      pendingSurfaceIds={new Set()}
+      previewSessions={{}}
+      desktopByTabId={{}}
+      terminalLabelsById={new Map()}
+      onActivate={() => undefined}
+      onCloseSurface={() => undefined}
+      onCloseOtherSurfaces={() => undefined}
+      onCloseSurfacesToRight={() => undefined}
+      onCloseAllSurfaces={() => undefined}
+      onCopyFilePath={() => undefined}
+      onAddBrowser={() => undefined}
+      onAddTerminal={() => undefined}
+      onAddPullRequest={() => undefined}
+      onAddDiff={() => undefined}
+      onAddFiles={() => undefined}
+      onAddAgents={() => undefined}
+      onAddExperiments={() => undefined}
+      onAddSpecialists={() => undefined}
+      onAddAutoresearch={() => undefined}
+      liveAgentCount={0}
+      browserAvailable
+      terminalAvailable
+      diffAvailable
+      filesAvailable
+      pullRequestAvailable
+      agentsAvailable
+      experimentsAvailable
+      specialistsAvailable
+      autoresearchAvailable
     >
       <div>content</div>
     </RightPanelTabs>,
@@ -122,6 +169,21 @@ describe("RightPanelTabs preview favicon", () => {
   it("hides a capture while the server session still describes another origin", () => {
     const html = renderTabs(favicon("data:image/png;base64,AAAA", "https://example.com/"));
     expect(html).not.toContain("data:image/png;base64,AAAA");
+  });
+});
+
+describe("RightPanelTabs research launcher", () => {
+  it("offers the three project research surfaces and their shortcut keys", () => {
+    const html = renderEmptyLauncher();
+    expect(html).toContain("Runtime");
+    expect(html).toContain("Workspace");
+    expect(html).toContain("Research");
+    expect(html).toContain("Experiments");
+    expect(html).toContain("Specialists");
+    expect(html).toContain("Autoresearch");
+    expect(html).toContain('data-surface-launcher-keys="BTAFDPERS"');
+    expect(html.indexOf("Experiments")).toBeLessThan(html.indexOf("Autoresearch"));
+    expect(html.indexOf("Autoresearch")).toBeLessThan(html.indexOf("Specialists"));
   });
 });
 

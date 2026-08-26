@@ -1,8 +1,9 @@
 # T3RL research lab architecture
 
-> For maintainers. This document describes a proposed feature, not shipped behavior.
+> For maintainers. The Phase 1 backend and initial web/desktop client are implemented; later
+> research phases remain incremental work.
 
-Status: proposal
+Status: Phase 1 backend and initial RL Lab UI implemented; validation and later research phases remain
 
 Delivery plan: [T3RL phased development plan](./rl-lab-roadmap.md)
 
@@ -111,14 +112,14 @@ apps/web and apps/mobile
 apps/server
   RL run lifecycle + process supervision + artifact access
               │
-              │ versioned NDJSON over stdin/stdout
+              │ argv + versioned NDJSON over stdout
               ▼
 Python worker
   runner adapter + Gymnasium + Stable-Baselines3
               │
               ├─ metrics
-              ├─ checkpoints
-              ├─ evaluation video
+              ├─ final model
+              ├─ evaluation summary and replay
               └─ resolved environment metadata
 ```
 
@@ -145,8 +146,9 @@ are labeled as evaluation output so they are not confused with training rewards.
 ### Artifact
 
 A file produced by a run, such as a checkpoint, resolved manifest, log, evaluation video, or summary.
-Artifacts have a media type, size, content hash, and logical kind. Clients receive artifacts through
-authorized server endpoints rather than arbitrary filesystem paths.
+Artifacts have a media type, size, and logical kind. Clients receive artifacts through authorized
+server endpoints rather than arbitrary filesystem paths. Content hashes remain a later evidence
+extension.
 
 ### Runner
 
@@ -180,73 +182,75 @@ and reporting it as a failure would fabricate a scientific claim about a traject
 The first terminal fact wins: a worker that finishes on its own before a pending cancellation reaches
 it records the result it reported, not `cancelled`.
 
-Starting a run always yields a fresh run id — a deliberate retry is a second run, which is correct
-for research. Cancelling a terminal run succeeds without effect. A disconnected client does not
-affect the process. Process adoption and checkpoint resume after a restart are later capabilities.
+Each start carries a client request id. Retrying the same request for a project returns the original
+run id without spawning again; a deliberate rerun uses a new request id and produces a new run.
+Cancelling a terminal run succeeds without effect. A disconnected client does not affect the
+process. Process adoption and checkpoint resume after a restart are later capabilities.
 
 ## Contracts and persistence
 
 Client/server schemas belong in `packages/contracts`. Shared connection and cached domain state
 belong in `packages/client-runtime`. Visual state stays in the relevant client.
 
-The proposed RPC surface is intentionally small:
+The implemented RPC surface is intentionally small:
 
-- `rl.capabilities`: report available runners and actionable setup failures.
-- `rl.experiments.list`: resolve project experiment definitions.
-- `rl.runs.list`: return durable run summaries for one project.
-- `rl.runs.start`: request a run from an explicit experiment and seed.
-- `rl.runs.cancel`: request cancellation of a non-terminal run.
-- `rl.runs.subscribe`: stream lifecycle updates and bounded metric batches for one run.
-- `rl.artifacts.open`: return metadata and an authorized download handle for one artifact.
+- `rl.capabilities`: report available runners, actionable setup failures, and bundled experiments.
+- `rl.listRuns`: return durable run summaries for one project.
+- `rl.getRun`: return the manifest, bounded metrics, and artifact metadata for one run.
+- `rl.startRun`: request a run from an experiment, seed, and client request id.
+- `rl.cancelRun`: request cancellation of a non-terminal run.
+- `rl.subscribeRun`: send a durable snapshot followed by live lifecycle, manifest, metric, and
+  artifact events.
+
+Artifact bytes use the existing signed asset URL boundary.
 
 Names may change to match the concrete Effect RPC grouping, but the capability boundaries should not
 expand during the first slice.
 
-Run intent and lifecycle transitions should use the existing command, event, and projection model.
-Metric points must not become orchestration events. A compact run projection supports lists and
-reconnection; full metrics and artifacts remain in the run artifact store.
+Run intent and lifecycle transitions use an RL-owned in-place projection rather than the
+orchestration event log. Metric points must not become orchestration events. A compact run
+projection supports lists and reconnection; metrics and artifact metadata use dedicated tables.
 
 ### Experiment definitions
 
-Project-owned definitions live under:
+Phase 1 definitions are bundled, version-controlled JSON:
 
 ```text
-.t3rl/
-  experiments/
-    cartpole-ppo.yaml
+python/t3rl_worker/experiments/
+  cartpole-ppo.json
 ```
 
-These files are intended to be version controlled. The UI may create or edit them, but it must show
-the resulting file change like any other workspace edit.
+Project-owned definitions are a later extension. When added, UI edits must remain ordinary,
+reviewable workspace changes.
 
 ### Run artifacts
 
 Generated artifacts default to environment-local T3 state rather than the Git workspace:
 
 ```text
-<T3 home>/rl/projects/<project-id>/runs/<run-id>/
+<stateDir>/rl/<run-id>/
   manifest.json
-  metrics.ndjson
   worker.log
   summary.json
-  checkpoints/
-  evaluations/
+  evaluation.json
+  replay.json
+  model.zip
 ```
 
 This avoids adding large binary output to Git and prevents run output from contaminating thread
 checkpoints. Exporting selected artifacts into the workspace is an explicit future action.
 
-The immutable manifest should contain at least:
+The Phase 1 immutable manifest contains:
 
-- experiment schema version and resolved configuration;
-- environment, algorithm, runner, and their versions;
-- random seed and evaluation policy;
-- project-relative entry points, when custom code is used;
+- experiment id and resolved configuration;
+- runner id and version plus worker protocol version;
+- random seed and runner-resolved evaluation policy;
 - Git commit and dirty-worktree status;
-- a content hash and retained patch when uncommitted changes affect the run;
 - Python executable, version, and environment fingerprint;
-- operating system, accelerator, and relevant library versions;
-- start time and T3RL version.
+- instrumentation level and a host hardware summary.
+
+Content hashes, retained dirty patches, accelerator evidence, and exported source snapshots are later
+research-evidence extensions.
 
 Secrets and environment-variable values are excluded. The manifest may record the names of declared
 inputs, but never credentials or raw tokens.
@@ -260,19 +264,18 @@ and the bounded worker log.
 The worker must first emit a `hello` message containing its protocol, runner, and runner version. The
 server rejects an incompatible protocol before marking the run as `running`.
 
-Initial message kinds are:
+Implemented message kinds are:
 
 - `hello`
-- `run.started`
-- `metric.batch`
-- `artifact.created`
-- `run.completed`
-- `run.failed`
+- `manifest`
+- `metrics`
+- `artifact`
 - `error`
+- `done`
 
-Server-to-worker messages are initially limited to `run.start`, `run.cancel`, and `shutdown`.
-Messages are validated at the server boundary. Unknown compatible fields are ignored; unknown message
-kinds and invalid required fields fail the run with a protocol error.
+The initial worker receives its immutable inputs through an argument vector. Cancellation is a
+process-tree signal, not a protocol message. Messages are validated at the server boundary; unknown
+message kinds and invalid required fields fail the run with a protocol error.
 
 ## Metrics and rendering
 
@@ -286,7 +289,7 @@ For the first slice:
 - retain raw episode summaries on disk, not individual environment steps;
 - bound each batch by point count and encoded byte size;
 - downsample historical series before returning them to a chart;
-- stop periodic publishing when no client subscribes, while continuing on-disk collection;
+- coalesce server-side metric bursts independently of subscriber count;
 - record evaluation video after a configured interval or at completion, not during every training
   step.
 
@@ -366,7 +369,7 @@ Instrumentation is selected explicitly and recorded in the resolved manifest:
 - `deep`: selected activations, gradients, replay-buffer samples, state maps, and additional model
   snapshots.
 
-`minimal` is the first-slice default. `deep` is opt-in because collection, serialization, storage,
+`standard` is the PPO first-slice default. `deep` is opt-in because collection, serialization, storage,
 and synchronization can change training throughput or behavior. Comparisons show instrumentation
 differences alongside code and configuration differences.
 
@@ -395,6 +398,37 @@ The long-term interface should allow an agent to:
 
 The first vertical slice does not add provider-specific behavior. It exposes run summaries in a
 stable server API first; agent tools or generated context can build on that API later.
+
+### Right-panel research workbenches
+
+The web/desktop right-panel selector exposes three project-scoped workbenches without changing the
+ordinary Agents surface:
+
+- `experiments` embeds the existing RL Lab beside a conversation;
+- `specialists` edits reusable scientific role instructions;
+- `autoresearch` prepares one evidence-backed, review-gated research iteration.
+
+The specialist and Autoresearch slice persists one `ResearchWorkspaceDocument` at
+`.t3rl/research.json` through the existing authorized project file RPC. This makes configuration
+branch-versioned and remote-ready without adding a second settings database. Prompts contain the
+effective specialist instructions visibly, so provider adapters do not need to pretend that Codex,
+Claude, Cursor, Grok, and OpenCode share one raw system-prompt primitive.
+
+Version 2 adds a `target` with three orthogonal fields: stable algorithm ID, task topology, and
+reward or feedback source. The client-runtime algorithm catalog derives family, learning mode,
+action space, required evidence, suggested adapters, and honest native-execution status. Version 1
+files migrate in memory and acquire the new default specialists without discarding edited profiles.
+See [RL algorithm coverage](./rl-algorithm-coverage.md) for the taxonomy and adapter boundary.
+
+When a baseline is selected, the client derives a bounded evidence block from the authoritative run
+projection: run identity and lifecycle, resolved manifest evidence, first/last/min/max scalar
+summaries with non-finite counts, and artifact identities. Project-authored evidence is delimited as
+untrusted data in the prepared prompt. The prepared first turn must stop before edits or training and
+request explicit approval.
+
+This is an assisted single-iteration seam, not the Phase 2B autonomous controller. Server-enforced
+multi-iteration budgets, durable hypothesis-to-outcome records, agent-facing evidence tools, and
+automatic authorized run execution remain Phase 2B work.
 
 ## Security and permissions
 
@@ -506,7 +540,7 @@ It is tempting to place every metric in the existing orchestration model because
 already reaches clients. Doing so would inflate the event log, projections, database, and WebSocket
 traffic.
 
-- Persist only run intent and lifecycle facts as domain events.
+- Persist run intent and lifecycle facts in the RL run projection, outside orchestration events.
 - Store metrics, logs, checkpoints, and videos in the bounded run artifact store.
 - Project only the compact metadata required for lists, status, reconnection, and authorization.
 - Never infer lifecycle transitions from missing telemetry.
@@ -571,7 +605,8 @@ degrade the rest of T3 Code.
 - Make expensive captures such as activations, gradient distributions, environment frames, and replay
   buffer samples explicit and periodic.
 - Record instrumentation settings in the resolved manifest.
-- Set byte, point-count, file-size, and retention limits at the server boundary.
+- Set byte, point-count, and file-size limits at the server boundary; add retention before enabling
+  broad concurrent use.
 - Render charts incrementally and downsample before sending large histories to a client.
 - Measure worker, server, WebSocket, and renderer overhead before increasing telemetry detail.
 
@@ -637,7 +672,8 @@ Node workspace package and must not leak Python framework types into `packages/c
 ## Verification strategy
 
 - Contract tests reject malformed run requests and protocol messages.
-- Pure lifecycle tests cover valid transitions and idempotent start/cancel behavior.
+- Pure lifecycle tests cover valid transitions and idempotent cancellation behavior; manager and
+  store tests cover request-id start deduplication.
 - Server tests use a deterministic fake worker for success, failure, cancellation, malformed output,
   and unexpected exit.
 - Worker tests validate manifest resolution, seeding, metric aggregation, and a short CartPole smoke
@@ -645,7 +681,7 @@ Node workspace package and must not leak Python framework types into `packages/c
 - Persistence tests prove that run summaries survive server restart and active runs become explicitly
   interrupted.
 - Subscription tests prove batching, byte limits, reconnection, and subscriber cleanup.
-- Artifact tests cover authorization, media metadata, content hashes, and path traversal attempts.
+- Artifact tests cover authorization, media metadata, lexical traversal, and symlink escape attempts.
 - Client tests render empty, unavailable, preparing, running, failed, cancelled, and completed states.
 
 ## Later milestones
@@ -676,8 +712,9 @@ The run kernel increment settled the first two. Full reasoning lives in
   introducing scope literals. Scopes are frozen per session in `auth_sessions.scopes`, so a new one
   would force every paired device to re-pair, and a client that can dispatch an orchestration command
   already runs arbitrary code on the server.
-- **Open.** How the development worker environment is provisioned without turning capability
-  detection into implicit package installation.
+- **Settled for development.** `python/pyproject.toml` declares the optional worker environment and
+  `T3RL_PYTHON` selects it; capability detection remains read-only. Desktop release distribution is
+  still a later packaging decision.
 - **Open.** The retention limit and explicit cleanup behavior for environment-local run artifacts.
   The kernel ships no way to delete a run, so this stays deferred rather than half-built.
 

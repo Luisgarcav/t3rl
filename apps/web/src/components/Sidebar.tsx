@@ -43,6 +43,7 @@ import {
   ClockIcon,
   FolderIcon,
   FolderPlusIcon,
+  FlaskConicalIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
@@ -1985,6 +1986,25 @@ export default function Sidebar() {
     [isMobile, router, setOpenMobile],
   );
 
+  const handleOpenRlLab = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setProjectScopeMenuOpen(false);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      void router.navigate({
+        to: "/rl/$environmentId/$projectId",
+        params: {
+          environmentId: projectGroup.environmentId,
+          projectId: projectGroup.id,
+        },
+      });
+    },
+    [isMobile, router, setOpenMobile],
+  );
+
   // Settled threads stay in the live shell stream (settled ≠ archived), so
   // the partition works directly off live shells: no archived-snapshot
   // merging, no optimistic holds. Archived threads remain hidden here —
@@ -3518,9 +3538,22 @@ export default function Sidebar() {
                             <Button
                               size="icon-xs"
                               variant="ghost-muted"
+                              aria-label={`Open RL Lab for ${project.displayName}`}
+                              title={`Open RL Lab for ${project.displayName}`}
+                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                void handleOpenRlLab(event, project);
+                              }}
+                            >
+                              <FlaskConicalIcon className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="icon-xs"
+                              variant="ghost-muted"
                               aria-label={`Project settings for ${project.displayName}`}
                               title={`Project settings for ${project.displayName}`}
-                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
+                              className="size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {
                                 void handleProjectSettings(event, project);

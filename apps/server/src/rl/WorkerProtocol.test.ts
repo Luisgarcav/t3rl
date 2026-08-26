@@ -59,6 +59,18 @@ describe("decodeWorkerLine", () => {
     expect(decode({ type: "done", status: "failed" })._tag).toBe("Message");
   });
 
+  it("preserves a stable worker exception code", () => {
+    const result = decode({ type: "error", code: "RunnerException", detail: "training diverged" });
+    expect(result._tag).toBe("Message");
+    if (result._tag !== "Message" || result.message._tag !== "Error") return;
+    expect(result.message.code).toBe("RunnerException");
+    expect(result.message.detail).toBe("training diverged");
+  });
+
+  it("rejects an unknown worker error code", () => {
+    expect(decode({ type: "error", code: "MadeUp", detail: "nope" })._tag).toBe("Failure");
+  });
+
   it("rejects malformed JSON", () => {
     const result = WorkerProtocol.decodeWorkerLine("{not json");
     expect(result._tag).toBe("Failure");
@@ -75,7 +87,7 @@ describe("decodeWorkerLine", () => {
     const result = WorkerProtocol.decodeWorkerLine(line);
     expect(result._tag).toBe("Failure");
     if (result._tag !== "Failure") return;
-    expect(result.code).toBe("MalformedWorkerMessage");
+    expect(result.code).toBe("WorkerMessageTooLarge");
   });
 
   it("ignores a blank line", () => {

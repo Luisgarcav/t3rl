@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -40,7 +41,12 @@ const fakeRunner = (outputs: Record<string, { stdout: string; code: number }>) =
   );
 
 const withRunner = (outputs: Record<string, { stdout: string; code: number }>) =>
-  Effect.provide(Capabilities.CapabilitiesLive.pipe(Layer.provide(fakeRunner(outputs))));
+  Effect.provide(
+    Capabilities.CapabilitiesLive.pipe(
+      Layer.provide(fakeRunner(outputs)),
+      Layer.provide(NodeServices.layer),
+    ),
+  );
 
 describe("Capabilities", () => {
   it.effect("reports the fake runner as available when python3 answers", () =>
@@ -50,7 +56,7 @@ describe("Capabilities", () => {
       const fake = report.runners.find((runner) => runner.runnerId === "fake");
       assert.strictEqual(fake?.available, true);
       assert.strictEqual(fake?.failureCode, null);
-      assert.strictEqual(fake?.version, "3.12.4");
+      assert.strictEqual(fake?.version, "0.1.0");
     }).pipe(withRunner({ python3: { stdout: "Python 3.12.4\n", code: 0 } })),
   );
 

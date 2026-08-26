@@ -59,6 +59,7 @@ import {
   WsRpcGroup,
   AssetRlArtifactNotFoundError,
   RlRunNotFoundError,
+  isTerminalRlRunState,
   type RlSubscriptionEvent,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
@@ -2086,13 +2087,22 @@ const makeWsRpcLayer = (
         [WS_METHODS.rlSubscribeRun]: (input) =>
           observeRpcStream(
             WS_METHODS.rlSubscribeRun,
-            Stream.callback<RlSubscriptionEvent, RlRunNotFoundError>((queue) =>
-              Effect.acquireRelease(
-                rlManager.subscribe(input, (event) => {
-                  Queue.offerUnsafe(queue, event);
-                }),
-                (unsubscribe) => Effect.sync(unsubscribe),
-              ),
+            Stream.callback<RlSubscriptionEvent, RlRunNotFoundError>(
+              (queue) =>
+                Effect.acquireRelease(
+                  rlManager.subscribe(input, (event) => {
+                    Queue.offerUnsafe(queue, event);
+                    const state =
+                      event._tag === "Metrics" ||
+                      event._tag === "Artifact" ||
+                      event._tag === "Manifest"
+                        ? null
+                        : event.summary.state;
+                    if (state !== null && isTerminalRlRunState(state)) Queue.endUnsafe(queue);
+                  }),
+                  (unsubscribe) => Effect.sync(unsubscribe),
+                ),
+              { bufferSize: 256, strategy: "sliding" },
             ),
             { "rpc.aggregate": "rl" },
           ),

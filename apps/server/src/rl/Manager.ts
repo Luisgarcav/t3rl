@@ -19,6 +19,8 @@ import {
   type RlRunSummary,
   type RlSubscriptionEvent,
   RL_WORKER_PROTOCOL_VERSION,
+  RL_MAX_RUN_ARTIFACTS,
+  RL_MAX_SNAPSHOT_METRIC_BATCHES,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -41,29 +43,36 @@ import { Capabilities } from "./Capabilities.ts";
 import { Experiments } from "./Experiments.ts";
 import * as Lifecycle from "./Lifecycle.ts";
 import { RunStore } from "./RunStore.ts";
+import { SourceEvidence } from "./SourceEvidence.ts";
 import { WorkerSpawner, type WorkerProcess } from "./WorkerSpawner.ts";
 import * as WorkerProtocol from "./WorkerProtocol.ts";
 
 /** How long a cancelled worker gets to exit before SIGKILL. */
 export const CANCEL_GRACE = Duration.seconds(5);
+/** The worker must announce its protocol promptly after spawn. */
+export const STARTUP_TIMEOUT = Duration.seconds(15);
+/** Any valid protocol message resets this liveness deadline. */
+export const WORKER_STALL_TIMEOUT = Duration.seconds(60);
 /** Retained stderr, flushed to the run log on exit. Oldest bytes are dropped. */
 export const MAX_STDERR_BYTES = 64 * 1024;
 /** Metric batches that reach subscribers and the store, per second. */
 export const MAX_METRIC_BATCHES_PER_SECOND = 2;
 const METRIC_FLUSH_INTERVAL = Duration.millis(1000 / MAX_METRIC_BATCHES_PER_SECOND);
-/** A subscriber that cannot keep up is dropped rather than buffered forever. */
-const MAX_SUBSCRIBER_BACKLOG = 256;
+export const MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
+export const MAX_RUN_ARTIFACT_BYTES = 512 * 1024 * 1024;
 
 export interface RlRunDetail {
   readonly summary: RlRunSummary;
   readonly manifest: RlResolvedManifest | null;
   readonly artifacts: ReadonlyArray<RlArtifactMetadata>;
+  readonly metrics: ReadonlyArray<RlMetricBatch>;
 }
 
 export interface StartRunInput {
   readonly projectId: string;
   readonly experimentId: string;
   readonly seed: number;
+  readonly requestId?: string | undefined;
 }
 
 type Subscriber = (event: RlSubscriptionEvent) => void;
@@ -74,14 +83,18 @@ interface RunRecord {
   readonly experimentId: string;
   state: RlRunState;
   worker: WorkerProcess | null;
-  /** Set once `done` arrives, so process exit is not re-reported as a failure. */
-  doneSeen: boolean;
+  protocolPhase: "awaiting-hello" | "awaiting-manifest" | "ready" | "done";
+  doneResult: boolean | null;
   cancelRequested: boolean;
   metricSeq: number;
   pendingBatch: RlMetricBatch | null;
   flushScheduled: boolean;
-  stderrBytes: number;
-  stderrChunks: string[];
+  stderr: Buffer;
+  manifestBase: RlResolvedManifest | null;
+  artifactBytes: number;
+  artifactPaths: Set<string>;
+  watchdog: Fiber.Fiber<unknown, unknown> | null;
+  deadline: Fiber.Fiber<unknown, unknown> | null;
   subscribers: Set<Subscriber>;
   fibers: Fiber.Fiber<unknown, unknown>[];
 }
@@ -120,6 +133,7 @@ const makeManager = Effect.gen(function* () {
   const spawner = yield* WorkerSpawner;
   const capabilities = yield* Capabilities;
   const experiments = yield* Experiments;
+  const sourceEvidence = yield* SourceEvidence;
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -218,29 +232,21 @@ const makeManager = Effect.gen(function* () {
       record.pendingBatch = batch;
       if (record.flushScheduled) return;
       record.flushScheduled = true;
-      const fiber = yield* Effect.forkIn(
+      yield* Effect.forkIn(
         Effect.sleep(METRIC_FLUSH_INTERVAL).pipe(Effect.andThen(flushMetrics(runId))),
         scope,
       );
-      record.fibers.push(fiber);
     });
 
   // ---- stderr ------------------------------------------------------------
 
   const appendStderr = (record: RunRecord, line: string): void => {
-    const chunk = `${line}\n`;
-    record.stderrChunks.push(chunk);
-    record.stderrBytes += Buffer.byteLength(chunk, "utf8");
-    while (record.stderrBytes > MAX_STDERR_BYTES && record.stderrChunks.length > 1) {
-      const dropped = record.stderrChunks.shift();
-      if (dropped === undefined) break;
-      record.stderrBytes -= Buffer.byteLength(dropped, "utf8");
-    }
+    const chunk = Buffer.from(`${line}\n`, "utf8");
+    record.stderr = Buffer.concat([record.stderr, chunk]).subarray(-MAX_STDERR_BYTES);
   };
 
   const writeStderrArtifact = (record: RunRecord) =>
     Effect.gen(function* () {
-      if (record.stderrChunks.length === 0) return;
       const runRoot = Artifacts.runDirectory({
         rlRunsDir: config.rlRunsDir,
         runId: record.runId,
@@ -248,51 +254,188 @@ const makeManager = Effect.gen(function* () {
       if (runRoot === null) return;
       const relativePath = "worker.log";
       const target = path.join(runRoot, relativePath);
-      const contents = record.stderrChunks.join("");
-      yield* fs.writeFileString(target, contents).pipe(Effect.orDie);
+      yield* fs.writeFile(target, record.stderr).pipe(Effect.orDie);
       const at = yield* now;
-      yield* store
+      const artifact = yield* store
         .recordArtifact({
           runId: record.runId,
           kind: "log",
           relativePath,
-          bytes: Buffer.byteLength(contents, "utf8"),
+          bytes: record.stderr.byteLength,
           contentType: "text/plain",
           producedAt: at,
         })
         .pipe(Effect.orDie);
+      record.artifactPaths.add(relativePath);
+      record.artifactBytes += artifact.bytes;
+      publish(record, { _tag: "Artifact", artifact });
     });
+
+  const writeManifestArtifact = (record: RunRecord, manifest: RlResolvedManifest) =>
+    Effect.gen(function* () {
+      const runRoot = Artifacts.runDirectory({
+        rlRunsDir: config.rlRunsDir,
+        runId: record.runId,
+      });
+      if (runRoot === null) return;
+      const relativePath = "manifest.json";
+      // @effect-diagnostics-next-line preferSchemaOverJson:off - durable human-readable artifact.
+      const contents = `${JSON.stringify(manifest, null, 2)}\n`;
+      yield* fs.writeFileString(path.join(runRoot, relativePath), contents).pipe(Effect.orDie);
+      const at = yield* now;
+      const artifact = yield* store
+        .recordArtifact({
+          runId: record.runId,
+          kind: "manifest",
+          relativePath,
+          bytes: Buffer.byteLength(contents, "utf8"),
+          contentType: "application/json",
+          producedAt: at,
+        })
+        .pipe(Effect.orDie);
+      record.artifactPaths.add(relativePath);
+      record.artifactBytes += artifact.bytes;
+      publish(record, { _tag: "Artifact", artifact });
+    });
+
+  const stopWorker = (record: RunRecord) =>
+    Effect.gen(function* () {
+      const worker = record.worker;
+      if (worker === null) return;
+      yield* worker.kill("SIGTERM");
+      yield* Effect.forkIn(
+        Effect.sleep(CANCEL_GRACE).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const current = yield* getRecord(record.runId);
+              if (current === null || current.worker !== worker) return;
+              yield* worker.kill("SIGKILL");
+            }),
+          ),
+        ),
+        scope,
+      );
+    });
+
+  const failRun = (record: RunRecord, code: RlErrorCode, message: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (
+        Lifecycle.transition(record.state, { _tag: "WorkerFailed", code, message })._tag ===
+        "Rejected"
+      ) {
+        return;
+      }
+      yield* applyEvent(record.runId, { _tag: "WorkerFailed", code, message }, { code, message });
+      yield* stopWorker(record);
+    });
+
+  const armWatchdog = (
+    record: RunRecord,
+    timeout: Duration.Input,
+    code: RlErrorCode,
+    message: string,
+  ) =>
+    Effect.gen(function* () {
+      if (record.watchdog !== null) {
+        yield* Fiber.interrupt(record.watchdog).pipe(Effect.ignore);
+      }
+      record.watchdog = yield* Effect.forkIn(
+        Effect.sleep(timeout).pipe(Effect.andThen(failRun(record, code, message))),
+        scope,
+      );
+    });
+
+  const clearTimers = (record: RunRecord) =>
+    Effect.all(
+      [record.watchdog, record.deadline]
+        .filter((fiber): fiber is Fiber.Fiber<unknown, unknown> => fiber !== null)
+        .map((fiber) => Fiber.interrupt(fiber).pipe(Effect.ignore)),
+      { discard: true },
+    );
 
   // ---- worker output -----------------------------------------------------
 
   const handleArtifact = (record: RunRecord, kind: RlArtifactMetadata["kind"], relative: string) =>
     Effect.gen(function* () {
+      if (
+        record.artifactPaths.has(relative) ||
+        record.artifactPaths.size >= RL_MAX_RUN_ARTIFACTS - 1
+      ) {
+        yield* failRun(
+          record,
+          "MalformedWorkerMessage",
+          "worker announced too many or duplicate artifacts",
+        );
+        return;
+      }
       const resolved = Artifacts.resolveArtifactPath({
         rlRunsDir: config.rlRunsDir,
         runId: record.runId,
         relativePath: relative,
       });
       if (resolved === null) {
-        yield* applyEvent(
-          record.runId,
-          { _tag: "WorkerFailed", code: "MalformedWorkerMessage", message: "artifact escaped run" },
-          { code: "MalformedWorkerMessage", message: `artifact path rejected: ${relative}` },
+        yield* failRun(record, "MalformedWorkerMessage", `artifact path rejected: ${relative}`);
+        return;
+      }
+
+      const runRoot = Artifacts.runDirectory({ rlRunsDir: config.rlRunsDir, runId: record.runId });
+      if (runRoot === null) return;
+      const canonical = yield* Effect.all({
+        root: fs.realPath(runRoot).pipe(Effect.option),
+        file: fs.realPath(resolved).pipe(Effect.option),
+      });
+      if (canonical.root._tag === "None" || canonical.file._tag === "None") {
+        yield* failRun(record, "MalformedWorkerMessage", `artifact does not exist: ${relative}`);
+        return;
+      }
+      const relativeCanonical = path.relative(canonical.root.value, canonical.file.value);
+      if (
+        relativeCanonical === "" ||
+        relativeCanonical.startsWith("..") ||
+        path.isAbsolute(relativeCanonical)
+      ) {
+        yield* failRun(record, "MalformedWorkerMessage", `artifact escaped its run: ${relative}`);
+        return;
+      }
+      const info = yield* fs.stat(canonical.file.value).pipe(Effect.option);
+      if (info._tag === "None" || info.value.type !== "File") {
+        yield* failRun(
+          record,
+          "MalformedWorkerMessage",
+          `artifact is not a regular file: ${relative}`,
         );
         return;
       }
-      const info = yield* fs.stat(resolved).pipe(Effect.option);
-      const bytes = info._tag === "Some" ? Number(info.value.size) : 0;
+      const bytes = Number(info.value.size);
+      if (
+        !Number.isSafeInteger(bytes) ||
+        bytes < 0 ||
+        bytes > MAX_ARTIFACT_BYTES ||
+        record.artifactBytes + bytes > MAX_RUN_ARTIFACT_BYTES
+      ) {
+        yield* failRun(
+          record,
+          "MalformedWorkerMessage",
+          `artifact exceeded the run budget: ${relative}`,
+        );
+        return;
+      }
       const at = yield* now;
-      yield* store
+      const contentType =
+        kind === "model" ? "application/zip" : kind === "log" ? "text/plain" : "application/json";
+      const artifact = yield* store
         .recordArtifact({
           runId: record.runId,
           kind,
           relativePath: relative,
           bytes,
-          contentType: "application/octet-stream",
+          contentType,
           producedAt: at,
         })
         .pipe(Effect.orDie);
+      record.artifactPaths.add(relative);
+      record.artifactBytes += bytes;
+      publish(record, { _tag: "Artifact", artifact });
     });
 
   const handleLine = (runId: string, line: string) =>
@@ -303,61 +446,161 @@ const makeManager = Effect.gen(function* () {
       const decoded = WorkerProtocol.decodeWorkerLine(line);
       if (decoded._tag === "Ignored") return;
       if (decoded._tag === "Failure") {
-        yield* applyEvent(
-          runId,
-          { _tag: "WorkerFailed", code: decoded.code, message: decoded.detail },
-          { code: decoded.code, message: decoded.detail },
-        );
+        yield* failRun(record, decoded.code, decoded.detail);
         return;
       }
 
       switch (decoded.message._tag) {
-        case "Hello":
+        case "Hello": {
+          if (
+            record.protocolPhase !== "awaiting-hello" ||
+            record.manifestBase === null ||
+            decoded.message.runner !== record.manifestBase.runnerId ||
+            decoded.message.runnerVersion !== record.manifestBase.runnerVersion
+          ) {
+            yield* failRun(
+              record,
+              "ProtocolIncompatible",
+              "worker hello did not match the resolved runner",
+            );
+            return;
+          }
+          record.protocolPhase = "awaiting-manifest";
           yield* applyEvent(runId, { _tag: "WorkerReady" });
-          return;
-        case "Manifest":
-          return;
-        case "Metrics":
-          yield* offerMetrics(runId, decoded.message.batch);
-          return;
-        case "Artifact":
-          yield* handleArtifact(record, decoded.message.kind, decoded.message.path);
-          return;
-        case "Error":
-          yield* applyEvent(
-            runId,
-            { _tag: "WorkerFailed", code: decoded.message.code, message: decoded.message.detail },
-            { code: decoded.message.code, message: decoded.message.detail },
+          yield* armWatchdog(
+            record,
+            WORKER_STALL_TIMEOUT,
+            "WorkerStalled",
+            "worker stalled before its manifest",
           );
           return;
-        case "Done":
-          record.doneSeen = true;
-          yield* flushMetrics(runId);
-          yield* applyEvent(runId, { _tag: "WorkerDone", success: decoded.message.success });
+        }
+        case "Manifest": {
+          if (record.protocolPhase !== "awaiting-manifest" || record.manifestBase === null) {
+            yield* failRun(record, "MalformedWorkerMessage", "worker manifest was out of order");
+            return;
+          }
+          const manifest: RlResolvedManifest = {
+            ...record.manifestBase,
+            effectiveConfig: {
+              ...record.manifestBase.effectiveConfig,
+              ...decoded.message.values,
+            },
+          };
+          yield* store.setManifest({ runId, manifest }).pipe(Effect.orDie);
+          record.protocolPhase = "ready";
+          yield* writeManifestArtifact(record, manifest);
+          publish(record, { _tag: "Manifest", manifest });
+          yield* armWatchdog(
+            record,
+            WORKER_STALL_TIMEOUT,
+            "WorkerStalled",
+            "worker stopped producing output",
+          );
           return;
+        }
+        case "Metrics": {
+          if (record.protocolPhase !== "ready") {
+            yield* failRun(record, "MalformedWorkerMessage", "worker metrics were out of order");
+            return;
+          }
+          yield* offerMetrics(runId, decoded.message.batch);
+          yield* armWatchdog(
+            record,
+            WORKER_STALL_TIMEOUT,
+            "WorkerStalled",
+            "worker stopped producing output",
+          );
+          return;
+        }
+        case "Artifact": {
+          if (record.protocolPhase !== "ready") {
+            yield* failRun(record, "MalformedWorkerMessage", "worker artifact was out of order");
+            return;
+          }
+          yield* handleArtifact(record, decoded.message.kind, decoded.message.path);
+          if (record.state === "running" || record.state === "cancelling") {
+            yield* armWatchdog(
+              record,
+              WORKER_STALL_TIMEOUT,
+              "WorkerStalled",
+              "worker stopped producing output",
+            );
+          }
+          return;
+        }
+        case "Error": {
+          if (record.protocolPhase === "awaiting-hello" || record.protocolPhase === "done") {
+            yield* failRun(record, "MalformedWorkerMessage", "worker error was out of order");
+            return;
+          }
+          yield* failRun(record, decoded.message.code, decoded.message.detail);
+          return;
+        }
+        case "Done": {
+          if (record.protocolPhase !== "ready") {
+            yield* failRun(record, "MalformedWorkerMessage", "worker done was out of order");
+            return;
+          }
+          record.protocolPhase = "done";
+          record.doneResult = decoded.message.success;
+          yield* flushMetrics(runId);
+          yield* armWatchdog(
+            record,
+            WORKER_STALL_TIMEOUT,
+            "WorkerStalled",
+            "worker did not exit after done",
+          );
+          return;
+        }
       }
     });
 
-  const watchExit = (record: RunRecord, worker: WorkerProcess) =>
+  const watchExit = (
+    record: RunRecord,
+    worker: WorkerProcess,
+    stdoutFiber: Fiber.Fiber<unknown, unknown>,
+    stderrFiber: Fiber.Fiber<unknown, unknown>,
+  ) =>
     Effect.gen(function* () {
       const code = yield* worker.exitCode.pipe(Effect.orElseSucceed(() => null));
+      // Child exit can race the stream pumps. Drain both before interpreting
+      // `done` or writing the final log so terminal state reflects all output.
+      yield* Effect.all([Fiber.await(stdoutFiber), Fiber.await(stderrFiber)], {
+        discard: true,
+      });
+      yield* clearTimers(record);
       yield* flushMetrics(record.runId);
       yield* writeStderrArtifact(record);
 
-      if (record.doneSeen) return;
-
-      if (record.cancelRequested) {
+      if (record.doneResult === true && code === 0) {
+        yield* applyEvent(record.runId, { _tag: "WorkerDone", success: true });
+      } else if (record.doneResult !== null) {
+        const message =
+          record.doneResult === false
+            ? "worker reported a failed run"
+            : `worker reported completion but exited with ${String(code)}`;
+        yield* applyEvent(
+          record.runId,
+          { _tag: "WorkerFailed", code: "RunnerException", message },
+          { code: "RunnerException", message },
+        );
+      } else if (record.cancelRequested) {
         yield* applyEvent(record.runId, { _tag: "WorkerStopped" });
-        return;
+      } else {
+        // Silence is never success: without `done`, an exit is a failure even
+        // at code 0, because the worker never claimed to have finished.
+        yield* applyEvent(
+          record.runId,
+          { _tag: "WorkerFailed", code: "WorkerExited", message: `worker exited with ${code}` },
+          { code: "WorkerExited", message: `worker exited without done (code ${String(code)})` },
+        );
       }
-
-      // Silence is never success: without `done`, an exit is a failure even at
-      // code 0, because the worker never claimed to have finished.
-      yield* applyEvent(
-        record.runId,
-        { _tag: "WorkerFailed", code: "WorkerExited", message: `worker exited with ${code}` },
-        { code: "WorkerExited", message: `worker exited without done (code ${String(code)})` },
-      );
+      yield* SynchronizedRef.update(runs, (map) => {
+        const next = new Map(map);
+        next.delete(record.runId);
+        return next;
+      });
     });
 
   // ---- public surface ----------------------------------------------------
@@ -365,17 +608,20 @@ const makeManager = Effect.gen(function* () {
   const start: RlManagerShape["start"] = (input) =>
     Effect.gen(function* () {
       const uuid = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-      const runId = `run_${uuid.replace(/-/g, "").slice(0, 24)}`;
+      const proposedRunId = `run_${uuid.replace(/-/g, "").slice(0, 24)}`;
       const requestedAt = yield* now;
 
-      yield* store
+      const requested = yield* store
         .insertRequested({
-          runId,
+          runId: proposedRunId,
           projectId: input.projectId,
           experimentId: input.experimentId,
           requestedAt,
+          ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
         })
         .pipe(Effect.orDie);
+      if (!requested.inserted) return { runId: requested.runId };
+      const runId = requested.runId;
 
       const record: RunRecord = {
         runId,
@@ -383,13 +629,18 @@ const makeManager = Effect.gen(function* () {
         experimentId: input.experimentId,
         state: "requested",
         worker: null,
-        doneSeen: false,
+        protocolPhase: "awaiting-hello",
+        doneResult: null,
         cancelRequested: false,
         metricSeq: 0,
         pendingBatch: null,
         flushScheduled: false,
-        stderrBytes: 0,
-        stderrChunks: [],
+        stderr: Buffer.alloc(0),
+        manifestBase: null,
+        artifactBytes: 0,
+        artifactPaths: new Set(),
+        watchdog: null,
+        deadline: null,
         subscribers: new Set(),
         fibers: [],
       };
@@ -403,14 +654,27 @@ const makeManager = Effect.gen(function* () {
           runId,
           { _tag: "WorkerFailed", code: error.code, message: error.detail },
           { code: error.code, message: error.detail },
-        ).pipe(Effect.andThen(Effect.fail(error)));
+        ).pipe(
+          Effect.andThen(
+            SynchronizedRef.update(runs, (map) => {
+              const next = new Map(map);
+              next.delete(runId);
+              return next;
+            }),
+          ),
+          Effect.andThen(Effect.fail(error)),
+        );
 
       const definition = yield* experiments
         .resolve({ experimentId: input.experimentId })
         .pipe(Effect.catchTag("RlRunStartError", failStart));
 
-      const python = yield* capabilities
-        .resolvePython()
+      const source = yield* sourceEvidence
+        .resolve(input.projectId)
+        .pipe(Effect.catchTag("RlRunStartError", failStart));
+
+      const resolvedRunner = yield* capabilities
+        .resolveRunner({ runnerId: definition.runnerId })
         .pipe(Effect.catchTag("RlRunStartError", failStart));
 
       const runRoot = Artifacts.runDirectory({
@@ -424,37 +688,49 @@ const makeManager = Effect.gen(function* () {
       }
       yield* fs.makeDirectory(runRoot, { recursive: true }).pipe(Effect.orDie);
 
-      const manifest: RlResolvedManifest = {
+      record.manifestBase = {
         experimentId: definition.experimentId,
         runnerId: definition.runnerId,
-        runnerVersion: "0.1.0",
+        runnerVersion: resolvedRunner.runnerVersion,
         protocolVersion: RL_WORKER_PROTOCOL_VERSION,
         seed: input.seed,
         effectiveConfig: definition.config,
-        sourceRevision: null,
-        sourceDirty: false,
-        pythonExecutable: python.executable,
-        pythonVersion: python.version,
-        environmentFingerprint: `${python.executable}@${python.version}`,
+        sourceRevision: source.sourceRevision,
+        sourceDirty: source.sourceDirty,
+        pythonExecutable: resolvedRunner.executable,
+        pythonVersion: resolvedRunner.version,
+        environmentFingerprint: resolvedRunner.environmentFingerprint,
         instrumentationLevel: definition.instrumentationLevel,
         hardwareSummary: `${hostPlatform}/${hostArchitecture}`,
       };
-      yield* store.setManifest({ runId, manifest }).pipe(Effect.orDie);
+
+      const workerArgs = [
+        definition.entrypoint,
+        "--run-dir",
+        runRoot,
+        "--seed",
+        String(input.seed),
+        "--config-json",
+        // @effect-diagnostics-next-line preferSchemaOverJson:off - bounded worker argv payload.
+        JSON.stringify(definition.config),
+        ...(definition.scenario === undefined ? [] : ["--scenario", definition.scenario]),
+      ];
+      const workerEnv = Object.fromEntries(
+        ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"]
+          .map((name) => [name, process.env[name]] as const)
+          .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
+      );
 
       const worker = yield* spawner
         .spawn({
-          command: python.executable,
-          args: [
-            definition.entrypoint,
-            "--scenario",
-            definition.scenario,
-            "--run-dir",
-            runRoot,
-            "--seed",
-            String(input.seed),
-          ],
-          cwd: config.baseDir,
-          env: { T3RL_RUN_ID: runId, PATH: process.env["PATH"] ?? "" },
+          command: resolvedRunner.executable,
+          args: workerArgs,
+          cwd: source.workspaceRoot,
+          env: {
+            ...workerEnv,
+            T3RL_RUN_ID: runId,
+            PYTHONHASHSEED: String(input.seed),
+          },
         })
         .pipe(
           Effect.provideService(Scope.Scope, scope),
@@ -464,6 +740,20 @@ const makeManager = Effect.gen(function* () {
         );
 
       record.worker = worker;
+      yield* armWatchdog(
+        record,
+        STARTUP_TIMEOUT,
+        "WorkerHelloTimeout",
+        "worker did not send hello in time",
+      );
+      record.deadline = yield* Effect.forkIn(
+        Effect.sleep(Duration.seconds(definition.maxRuntimeSeconds)).pipe(
+          Effect.andThen(
+            failRun(record, "WorkerStalled", "worker exceeded the experiment runtime limit"),
+          ),
+        ),
+        scope,
+      );
 
       const stdoutFiber = yield* Effect.forkIn(
         worker.stdoutLines.pipe(
@@ -479,7 +769,10 @@ const makeManager = Effect.gen(function* () {
         ),
         scope,
       );
-      const exitFiber = yield* Effect.forkIn(watchExit(record, worker), scope);
+      const exitFiber = yield* Effect.forkIn(
+        watchExit(record, worker, stdoutFiber, stderrFiber),
+        scope,
+      );
       record.fibers.push(stdoutFiber, stderrFiber, exitFiber);
 
       return { runId };
@@ -511,24 +804,15 @@ const makeManager = Effect.gen(function* () {
       const worker = record.worker;
       if (worker === null) {
         yield* applyEvent(input.runId, { _tag: "WorkerStopped" });
+        yield* SynchronizedRef.update(runs, (map) => {
+          const next = new Map(map);
+          next.delete(input.runId);
+          return next;
+        });
         return { state: record.state };
       }
 
-      yield* worker.kill("SIGTERM");
-      const escalation = yield* Effect.forkIn(
-        Effect.sleep(CANCEL_GRACE).pipe(
-          Effect.andThen(
-            Effect.gen(function* () {
-              const current = yield* getRecord(input.runId);
-              // Only escalate if the worker still has not gone away.
-              if (current === null || current.state !== "cancelling") return;
-              yield* worker.kill("SIGKILL");
-            }),
-          ),
-        ),
-        scope,
-      );
-      record.fibers.push(escalation);
+      yield* stopWorker(record);
 
       return { state: record.state };
     });
@@ -545,35 +829,55 @@ const makeManager = Effect.gen(function* () {
         .getRun({ runId: input.runId })
         .pipe(Effect.catchTag("PersistenceSqlError", Effect.orDie));
       const artifacts = yield* store.listArtifacts({ runId: input.runId }).pipe(Effect.orDie);
-      return { summary: detail.summary, manifest: detail.manifest, artifacts };
+      const metrics = yield* store
+        .listMetrics({ runId: input.runId, limit: RL_MAX_SNAPSHOT_METRIC_BATCHES })
+        .pipe(Effect.orDie);
+      return { summary: detail.summary, manifest: detail.manifest, artifacts, metrics };
     });
 
   const subscribe: RlManagerShape["subscribe"] = (input, onEvent) =>
     Effect.gen(function* () {
-      const detail = yield* get(input);
-      let delivered = 0;
-      const bounded: Subscriber = (event) => {
-        if (delivered >= MAX_SUBSCRIBER_BACKLOG) return;
-        delivered += 1;
-        onEvent(event);
-      };
-
-      // Snapshot first, then live: a reconnecting client rebuilds current state
-      // without replaying the run and without creating a second one.
-      onEvent({
-        _tag: "Snapshot",
-        summary: detail.summary,
-        manifest: detail.manifest,
-        artifacts: detail.artifacts,
-      });
-
       const record = yield* getRecord(input.runId);
       if (record === null) {
+        const detail = yield* get(input);
+        onEvent({ _tag: "Snapshot", ...detail });
         return () => {};
       }
-      record.subscribers.add(bounded);
+
+      // Register first and buffer while reading the durable snapshot. Events
+      // already reflected in that snapshot are deduplicated before delivery;
+      // events that raced after the read are replayed immediately after it.
+      let snapshotDelivered = false;
+      const buffered: RlSubscriptionEvent[] = [];
+      const subscriber: Subscriber = (event) => {
+        if (!snapshotDelivered) buffered.push(event);
+        else onEvent(event);
+      };
+      record.subscribers.add(subscriber);
+      const detail = yield* get(input).pipe(
+        Effect.onError(() => Effect.sync(() => record.subscribers.delete(subscriber))),
+      );
+      onEvent({ _tag: "Snapshot", ...detail });
+      snapshotDelivered = true;
+
+      const metricKeys = new Set(
+        detail.metrics.map((batch) => `${batch.step}:${batch.wallClockMs}`),
+      );
+      const artifactIds = new Set(detail.artifacts.map((artifact) => artifact.artifactId));
+      for (const event of buffered) {
+        if (event._tag === "Lifecycle" && event.summary.state === detail.summary.state) continue;
+        if (event._tag === "Manifest" && detail.manifest !== null) continue;
+        if (event._tag === "Artifact" && artifactIds.has(event.artifact.artifactId)) continue;
+        if (
+          event._tag === "Metrics" &&
+          metricKeys.has(`${event.batch.step}:${event.batch.wallClockMs}`)
+        ) {
+          continue;
+        }
+        onEvent(event);
+      }
       return () => {
-        record.subscribers.delete(bounded);
+        record.subscribers.delete(subscriber);
       };
     });
 
@@ -590,7 +894,14 @@ const makeManager = Effect.gen(function* () {
   yield* sweepInterruptedRuns();
 
   return RlManager.of({
-    capabilities: () => capabilities.report(),
+    capabilities: () =>
+      Effect.gen(function* () {
+        const [report, availableExperiments] = yield* Effect.all([
+          capabilities.report(),
+          experiments.list().pipe(Effect.orDie),
+        ]);
+        return { ...report, experiments: availableExperiments };
+      }),
     start,
     cancel,
     list,

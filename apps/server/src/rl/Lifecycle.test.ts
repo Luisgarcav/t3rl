@@ -65,6 +65,12 @@ describe("transition", () => {
   it("rejects out-of-order activation", () => {
     expect(Lifecycle.transition("requested", { _tag: "WorkerReady" })._tag).toBe("Rejected");
     expect(Lifecycle.transition("running", { _tag: "PreparationStarted" })._tag).toBe("Rejected");
+    expect(Lifecycle.transition("requested", { _tag: "WorkerDone", success: true })._tag).toBe(
+      "Rejected",
+    );
+    expect(Lifecycle.transition("preparing", { _tag: "WorkerDone", success: true })._tag).toBe(
+      "Rejected",
+    );
   });
 
   it("treats a repeated cancellation request as accepted and idempotent", () => {

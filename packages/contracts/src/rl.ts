@@ -11,6 +11,9 @@ const IdentifierSchema = TrimmedNonEmptyString.check(Schema.isPattern(/^[A-Za-z0
 export const RlRunId = IdentifierSchema;
 export type RlRunId = typeof RlRunId.Type;
 
+export const RlRunRequestId = IdentifierSchema;
+export type RlRunRequestId = typeof RlRunRequestId.Type;
+
 export const RlExperimentId = IdentifierSchema;
 export type RlExperimentId = typeof RlExperimentId.Type;
 
@@ -40,14 +43,23 @@ export const isTerminalRlRunState = (state: RlRunState): boolean =>
 export const RlErrorCode = Schema.Literals([
   "PythonNotFound",
   "RunnerUnavailable",
+  "InvalidExperiment",
+  "RunnerException",
   "ProtocolIncompatible",
   "MalformedWorkerMessage",
+  "WorkerMessageTooLarge",
+  "WorkerHelloTimeout",
   "WorkerStalled",
   "WorkerExited",
+  "ServerInterrupted",
   "RunNotFound",
   "ArtifactNotFound",
 ]);
 export type RlErrorCode = typeof RlErrorCode.Type;
+
+/** Wire and storage bounds shared by the server and every client surface. */
+export const RL_MAX_RUN_ARTIFACTS = 64;
+export const RL_MAX_SNAPSHOT_METRIC_BATCHES = 4096;
 
 const METRIC_KEY_PATTERN = /^[A-Za-z0-9_]+(\/[A-Za-z0-9_]+)*$/;
 const MAX_METRIC_KEY_LENGTH = 64;
@@ -127,7 +139,8 @@ export const RlResolvedManifest = Schema.Struct({
     .check(Schema.isMaxProperties(128))
     .check(boundedConfigKeys),
   sourceRevision: Schema.NullOr(Schema.String.check(Schema.isMaxLength(64))),
-  sourceDirty: Schema.Boolean,
+  /** Null means Git evidence was unavailable; it must never be presented as a clean tree. */
+  sourceDirty: Schema.NullOr(Schema.Boolean),
   pythonExecutable: Schema.String.check(Schema.isMaxLength(1024)),
   pythonVersion: Schema.String.check(Schema.isMaxLength(64)),
   environmentFingerprint: Schema.String.check(Schema.isMaxLength(128)),
@@ -160,8 +173,22 @@ export const RlRunnerCapability = Schema.Struct({
 });
 export type RlRunnerCapability = typeof RlRunnerCapability.Type;
 
+export const RlExperimentSummary = Schema.Struct({
+  experimentId: RlExperimentId,
+  displayName: Schema.String.check(Schema.isMaxLength(128)),
+  description: Schema.String.check(Schema.isMaxLength(512)),
+  runnerId: IdentifierSchema,
+  defaultSeed: Schema.Int,
+  instrumentationLevel: Schema.Literals(["minimal", "standard", "deep"]),
+  config: Schema.Record(Schema.String, Schema.Unknown)
+    .check(Schema.isMaxProperties(128))
+    .check(boundedConfigKeys),
+});
+export type RlExperimentSummary = typeof RlExperimentSummary.Type;
+
 export const RlCapabilityReport = Schema.Struct({
   runners: Schema.Array(RlRunnerCapability).check(Schema.isMaxLength(16)),
+  experiments: Schema.Array(RlExperimentSummary).check(Schema.isMaxLength(64)),
 });
 export type RlCapabilityReport = typeof RlCapabilityReport.Type;
 
@@ -170,9 +197,12 @@ export const RlSubscriptionEvent = Schema.Union([
   Schema.TaggedStruct("Snapshot", {
     summary: RlRunSummary,
     manifest: Schema.NullOr(RlResolvedManifest),
-    artifacts: Schema.Array(RlArtifactMetadata),
+    artifacts: Schema.Array(RlArtifactMetadata).check(Schema.isMaxLength(RL_MAX_RUN_ARTIFACTS)),
+    metrics: Schema.Array(RlMetricBatch).check(Schema.isMaxLength(RL_MAX_SNAPSHOT_METRIC_BATCHES)),
   }),
   Schema.TaggedStruct("Lifecycle", { summary: RlRunSummary }),
+  Schema.TaggedStruct("Manifest", { manifest: RlResolvedManifest }),
+  Schema.TaggedStruct("Artifact", { artifact: RlArtifactMetadata }),
   Schema.TaggedStruct("Metrics", { batch: RlMetricBatch }),
 ]);
 export type RlSubscriptionEvent = typeof RlSubscriptionEvent.Type;
