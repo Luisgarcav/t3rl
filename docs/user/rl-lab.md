@@ -23,8 +23,13 @@ A remote browser therefore controls the runner on its connected server, not on t
 ## Start a run
 
 The launch screen checks the server's runner capabilities before enabling **Start run**. If Python,
-Stable-Baselines3, TRL, or the CUDA runtime required by an experiment is unavailable, the warning
-includes the server-side remedy; RL Lab never installs packages automatically.
+Stable-Baselines3, TRL, Axolotl, or the CUDA runtime required by an experiment is unavailable, the
+warning includes the server-side remedy; RL Lab never installs packages automatically.
+
+Axolotl pins dependency versions that cannot share an environment with the TRL runner, so it needs
+its own Python environment. Point `T3RL_PYTHON_AXOLOTL` at that interpreter on the server; runners
+without a dedicated variable keep using the shared `T3RL_PYTHON`. Each run records the interpreter
+that served it, so a result always says which environment produced it.
 
 Choose a catalog experiment, enter an integer seed, and start the run. The bundled
 Stable-Baselines3 catalog covers PPO, A2C, and DQN on `CartPole-v1`, plus SAC, TD3, and DDPG on
@@ -76,7 +81,7 @@ Each run uses one seed and one local worker process, and does not resume after a
 Control experiments run on CPU; the bundled GRPO preview requires CUDA, records token, wall-clock,
 and GPU-hour limits, and intentionally retains no checkpoint. Its small fixed holdout demonstrates
 the before/after evaluation path but is not a statistically strong benchmark. It does not yet
-support arbitrary models, vLLM, Axolotl execution, or distributed training. Multi-seed comparison
+support arbitrary models, vLLM, or distributed training. Multi-seed comparison
 combines separate runs rather than launching a sweep, and uses the resolved seed as the statistical
 unit.
 Automatic diagnostics use configurable heuristics and should be checked against the task,

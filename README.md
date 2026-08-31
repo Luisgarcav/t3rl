@@ -52,6 +52,11 @@ An optional single-GPU preview adds one executable LLM post-training experiment:
 | --------- | ---------------------------- | ---------------------------- | -------------------- |
 | GRPO      | RLVR, exact-integer verifier | `Qwen/Qwen2.5-0.5B-Instruct` | `arithmetic-rlvr-v1` |
 
+The same task also runs through Axolotl. Because Axolotl pins exact dependency versions that
+conflict with the native TRL runner, it lives in its own environment named by
+`T3RL_PYTHON_AXOLOTL`. Both runners resolve the same model, dataset, verifier, and split policy and
+emit the same artifacts, so a comparison between them is attributable to the backend.
+
 The TRL worker records the resolved model commit, dataset SHA-256, split policy, verifier identity,
 dependency fingerprint, execution backend, and token/wall-clock/GPU-hour limits. It evaluates a
 versioned holdout before and after training, emits optimizer and resource metrics, and retains
@@ -210,7 +215,7 @@ flowchart TB
         direction LR
         sb3["Stable-Baselines3<br/>Control tasks · Evaluation trajectories · Models"]
         trl["TRL native<br/>GRPO/RLVR · Before/after evaluation · Completion evidence"]
-        axolotl["Axolotl adapter — planned<br/>Config translation · Plugins · Async rollouts"]
+        axolotl["Axolotl adapter<br/>GRPO/RLVR · Own interpreter · Same protocol"]
         distributed["Distributed launchers — planned<br/>Accelerate · FSDP · DeepSpeed · vLLM sidecar"]
     end
 
@@ -219,7 +224,7 @@ flowchart TB
     server <-->|"Durable bounded evidence"| store
     server <-->|"Spawn + versioned NDJSON"| sb3
     server <-->|"Spawn + versioned NDJSON"| trl
-    server -.->|"Same protocol"| axolotl
+    server <-->|"Same protocol"| axolotl
     server -.->|"Launcher-owned topology"| distributed
 ```
 
@@ -235,7 +240,7 @@ without coupling the UI to a particular RL framework.
   implemented.
 - The bundled experiment catalog is fixed and intentionally small.
 - The GRPO preview uses a small fixed holdout and does not retain checkpoints. It does not yet
-  support vLLM, arbitrary models, Axolotl execution, or distributed launchers.
+  support vLLM, arbitrary models, or distributed launchers.
 - Diagnostics are inspection heuristics, not causal conclusions or universal RL thresholds.
 - Autoresearch prepares a single reviewed iteration; it does not edit code, launch training, expand
   budgets, or loop autonomously without explicit approval.

@@ -44,10 +44,15 @@ are translated into bounded logs, metrics, and the existing failure codes.
 | ----------------------- | ------------------ | ------------------------------------------------------------------------------------- |
 | Stable-Baselines3       | Implemented        | Direct local Python worker for control tasks                                          |
 | Native TRL              | Implemented        | Single-process CUDA GRPO/RLVR with before/after holdout evaluation                    |
-| Axolotl                 | Planned adapter    | Generate a run-scoped YAML, load approved reward plugins, and normalize trainer logs  |
+| Axolotl                 | Implemented        | Translate config, install the verifier as a reward plugin, and normalize trainer logs |
 | Accelerate / `torchrun` | Planned launcher   | Launch ranks while exposing one worker protocol stream                                |
 | FSDP / DeepSpeed        | Planned strategies | Remain framework configuration, never client lifecycle variants                       |
 | vLLM                    | Planned sidecar    | Adapter owns readiness, GPU assignment, shutdown, and weight synchronization evidence |
+
+Axolotl pins exact dependency versions, and no release accepts the TRL version the native adapter
+targets, so it runs from its own interpreter named by `T3RL_PYTHON_AXOLOTL`. Its GRPO documentation
+presents a vLLM server as required; the schema defaults `use_vllm` to false and guards every vLLM
+call behind it, so the first adapter runs single-GPU without a sidecar.
 
 Axolotl's GRPO path builds on TRL and adds configuration and scaling features, so it should not
 create a second metric vocabulary in T3RL. The adapter maps its output into the same `train/*`,
@@ -78,7 +83,7 @@ Every adapter must:
 
 1. Prove the evaluation and telemetry contract with the native TRL adapter.
 2. Add checkpoint retention and resume semantics without changing the lifecycle model.
-3. Add an Axolotl adapter for one version-pinned GRPO configuration.
+3. ~~Add an Axolotl adapter for one version-pinned GRPO configuration.~~ Done.
 4. Add an Accelerate launcher with a deterministic two-GPU smoke fixture.
 5. Add FSDP or DeepSpeed as strategies, then a separately supervised vLLM sidecar.
 

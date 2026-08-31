@@ -93,7 +93,194 @@ const withTrlRunner = (cudaAvailable: boolean, trlVersion?: string) =>
     ),
   );
 
+/** Restores every touched variable, so interpreter tests cannot leak into each other. */
+const withEnvironment = <A, E, R>(
+  variables: Record<string, string | undefined>,
+  effect: Effect.Effect<A, E, R>,
+) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous: Record<string, string | undefined> = {};
+      for (const [name, value] of Object.entries(variables)) {
+        previous[name] = process.env[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      return previous;
+    }),
+    () => effect,
+    (previous) =>
+      Effect.sync(() => {
+        for (const [name, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+      }),
+  );
+
+interface FakeEnvironment {
+  readonly python: string;
+  readonly trl?: string;
+  readonly axolotl?: string;
+  readonly cudaAvailable?: boolean;
+}
+
+/**
+ * Answers only for the interpreters it is given, so a test proves which
+ * executable the resolver actually reached for.
+ */
+const interpreters = (environments: Record<string, FakeEnvironment>) =>
+  Layer.succeed(
+    ProcessRunner.ProcessRunner,
+    ProcessRunner.ProcessRunner.of({
+      run: (input) => {
+        const environment = environments[input.command];
+        if (environment === undefined) {
+          return Effect.fail(
+            new ProcessRunner.ProcessSpawnError({
+              command: input.command,
+              argumentCount: input.args.length,
+              resolvedCommand: input.command,
+              resolvedArgumentCount: input.args.length,
+              shell: false,
+              cause: "not found",
+            }),
+          );
+        }
+        const script = input.args[1] ?? "";
+        const isVersion = input.args[0] === "--version";
+        const isAxolotlProbe = input.args[0] === "-c" && script.includes("import axolotl");
+        const isTrlProbe = input.args[0] === "-c" && script.includes("import accelerate");
+        const cudaAvailable = environment.cudaAvailable ?? true;
+        const shared = {
+          executable: input.command,
+          python: environment.python,
+          platform: "test-platform",
+          transformers: "5.0.0",
+          torch: "2.9.0",
+          accelerate: "1.0.0",
+          cudaAvailable,
+          cudaDeviceCount: cudaAvailable ? 1 : 0,
+        };
+        const available =
+          isVersion ||
+          (isAxolotlProbe && environment.axolotl !== undefined) ||
+          (isTrlProbe && environment.trl !== undefined);
+        const stdout = isVersion
+          ? `Python ${environment.python}\n`
+          : isAxolotlProbe && environment.axolotl !== undefined
+            ? JSON.stringify({ ...shared, axolotl: environment.axolotl, trl: "1.8.0" })
+            : isTrlProbe && environment.trl !== undefined
+              ? JSON.stringify({ ...shared, trl: environment.trl, datasets: "4.0.0" })
+              : "";
+        return Effect.succeed({
+          stdout,
+          stderr: "",
+          code: ChildProcessSpawner.ExitCode(available ? 0 : 1),
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          stdoutInvalidUtf8: false,
+          stderrInvalidUtf8: false,
+        });
+      },
+    }),
+  );
+
+const withInterpreters = (environments: Record<string, FakeEnvironment>) =>
+  Effect.provide(
+    Capabilities.CapabilitiesLive.pipe(
+      Layer.provide(interpreters(environments)),
+      Layer.provide(NodeServices.layer),
+    ),
+  );
+
 describe("Capabilities", () => {
+  it.effect("resolves the axolotl runner through its dedicated interpreter", () =>
+    withEnvironment(
+      { T3RL_PYTHON_AXOLOTL: "/opt/axolotl/bin/python", T3RL_PYTHON: undefined },
+      Effect.gen(function* () {
+        const capabilities = yield* Capabilities.Capabilities;
+        const resolved = yield* capabilities.resolveRunner({ runnerId: "axolotl" });
+        assert.strictEqual(resolved.executable, "/opt/axolotl/bin/python");
+        assert.strictEqual(resolved.runnerVersion, "0.18.0");
+      }).pipe(
+        withInterpreters({
+          "/opt/axolotl/bin/python": { python: "3.12.4", axolotl: "0.18.0" },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("keeps the axolotl interpreter out of every other runner", () =>
+    withEnvironment(
+      { T3RL_PYTHON_AXOLOTL: "/opt/axolotl/bin/python", T3RL_PYTHON: "/opt/shared/bin/python" },
+      Effect.gen(function* () {
+        const capabilities = yield* Capabilities.Capabilities;
+        const resolved = yield* capabilities.resolveRunner({ runnerId: "trl" });
+        assert.strictEqual(resolved.executable, "/opt/shared/bin/python");
+        assert.strictEqual(resolved.runnerVersion, "1.10.0");
+      }).pipe(
+        withInterpreters({
+          "/opt/axolotl/bin/python": { python: "3.12.4", axolotl: "0.18.0" },
+          "/opt/shared/bin/python": { python: "3.12.4", trl: "1.10.0" },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("falls back to the shared interpreter when a runner has no dedicated one", () =>
+    withEnvironment(
+      { T3RL_PYTHON_AXOLOTL: undefined, T3RL_PYTHON: "/opt/shared/bin/python" },
+      Effect.gen(function* () {
+        const capabilities = yield* Capabilities.Capabilities;
+        const resolved = yield* capabilities.resolveRunner({ runnerId: "axolotl" });
+        assert.strictEqual(resolved.executable, "/opt/shared/bin/python");
+      }).pipe(
+        withInterpreters({
+          "/opt/shared/bin/python": { python: "3.12.4", axolotl: "0.18.0" },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("keeps an installed Axolotl runtime unavailable without CUDA", () =>
+    withEnvironment(
+      { T3RL_PYTHON_AXOLOTL: undefined, T3RL_PYTHON: undefined },
+      Effect.gen(function* () {
+        const capabilities = yield* Capabilities.Capabilities;
+        const report = yield* capabilities.report();
+        const axolotl = report.runners.find((runner) => runner.runnerId === "axolotl");
+        assert.strictEqual(axolotl?.available, false);
+        assert.strictEqual(axolotl?.failureCode, "RunnerUnavailable");
+        assert.include(axolotl?.remedy ?? "", "CUDA");
+
+        const exit = yield* Effect.exit(capabilities.resolveRunner({ runnerId: "axolotl" }));
+        assert.isTrue(exit._tag === "Failure");
+      }).pipe(
+        withInterpreters({
+          python3: { python: "3.12.4", axolotl: "0.18.0", cudaAvailable: false },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("rejects an Axolotl version the bundled adapter does not target", () =>
+    withEnvironment(
+      { T3RL_PYTHON_AXOLOTL: undefined, T3RL_PYTHON: undefined },
+      Effect.gen(function* () {
+        const capabilities = yield* Capabilities.Capabilities;
+        const report = yield* capabilities.report();
+        const axolotl = report.runners.find((runner) => runner.runnerId === "axolotl");
+        assert.strictEqual(axolotl?.available, false);
+        assert.include(axolotl?.remedy ?? "", "T3RL_PYTHON_AXOLOTL");
+      }).pipe(
+        withInterpreters({
+          python3: { python: "3.12.4", axolotl: "0.17.0" },
+        }),
+      ),
+    ),
+  );
   it.effect("reports the fake runner as available when python3 answers", () =>
     Effect.gen(function* () {
       const capabilities = yield* Capabilities.Capabilities;

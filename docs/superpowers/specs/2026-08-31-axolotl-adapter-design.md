@@ -2,7 +2,7 @@
 
 > For maintainers. Design for the second RL Lab execution backend.
 
-Status: approved, not implemented
+Status: implemented
 Date: 2026-08-31
 Adapter context: [RL framework adapters](../../internals/rl-framework-adapters.md)
 Architecture context: [T3RL research lab architecture](../../internals/rl-lab.md)

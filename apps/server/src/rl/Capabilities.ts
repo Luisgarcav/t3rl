@@ -21,6 +21,7 @@ import * as ProcessRunner from "../processRunner.ts";
 /** Gymnasium and Stable-Baselines3 both require 3.10 or newer. */
 const MINIMUM_PYTHON = { major: 3, minor: 10 } as const;
 const SUPPORTED_TRL_VERSION = "1.10.0";
+const SUPPORTED_AXOLOTL_VERSION = "0.18.0";
 
 const PYTHON_VERSION_PATTERN = /^Python (\d+)\.(\d+)(?:\.(\d+))?/m;
 
@@ -31,6 +32,13 @@ const TRL_REMEDY =
   "Create a uv environment and install the optional LLM runtime with `uv pip install --python .venv/bin/python -e './python[llm]'`, then set T3RL_PYTHON to that interpreter.";
 const TRL_CUDA_REMEDY =
   "The bundled GRPO/RLVR experiment requires a CUDA GPU visible to the configured PyTorch runtime.";
+// Axolotl pins exact dependency versions and no release accepts the TRL version
+// the native adapter targets, so it gets its own environment rather than a
+// downgrade of a runner that already works.
+const AXOLOTL_REMEDY =
+  "Create a separate uv environment with `uv pip install axolotl==0.18.0`, then set T3RL_PYTHON_AXOLOTL to that interpreter.";
+const AXOLOTL_CUDA_REMEDY =
+  "The bundled Axolotl GRPO experiment requires a CUDA GPU visible to the configured PyTorch runtime.";
 
 const SB3_PROBE = `
 import json, os, platform, sys
@@ -49,6 +57,12 @@ const TRL_PROBE = `
 import importlib.metadata as metadata, json, os, platform, sys
 import accelerate, datasets, torch, transformers, trl
 print(json.dumps({"executable": os.path.realpath(sys.executable), "python": platform.python_version(), "platform": platform.platform(), "trl": metadata.version("trl"), "transformers": metadata.version("transformers"), "datasets": metadata.version("datasets"), "accelerate": metadata.version("accelerate"), "torch": metadata.version("torch"), "cudaAvailable": torch.cuda.is_available(), "cudaDeviceCount": torch.cuda.device_count()}, sort_keys=True, separators=(",", ":")))
+`;
+
+const AXOLOTL_PROBE = `
+import importlib.metadata as metadata, json, os, platform, sys
+import axolotl, torch, transformers, trl
+print(json.dumps({"executable": os.path.realpath(sys.executable), "python": platform.python_version(), "platform": platform.platform(), "axolotl": metadata.version("axolotl"), "trl": metadata.version("trl"), "transformers": metadata.version("transformers"), "accelerate": metadata.version("accelerate"), "torch": metadata.version("torch"), "cudaAvailable": torch.cuda.is_available(), "cudaDeviceCount": torch.cuda.device_count()}, sort_keys=True, separators=(",", ":")))
 `;
 
 const Sb3ProbeResult = Schema.Struct({
@@ -75,6 +89,20 @@ const TrlProbeResult = Schema.Struct({
   cudaDeviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 const decodeTrlProbe = Schema.decodeUnknownOption(Schema.fromJsonString(TrlProbeResult));
+
+const AxolotlProbeResult = Schema.Struct({
+  executable: Schema.String.check(Schema.isMaxLength(1024)),
+  python: Schema.String.check(Schema.isMaxLength(64)),
+  platform: Schema.String.check(Schema.isMaxLength(256)),
+  axolotl: Schema.String.check(Schema.isMaxLength(64)),
+  trl: Schema.String.check(Schema.isMaxLength(64)),
+  transformers: Schema.String.check(Schema.isMaxLength(64)),
+  accelerate: Schema.String.check(Schema.isMaxLength(64)),
+  torch: Schema.String.check(Schema.isMaxLength(64)),
+  cudaAvailable: Schema.Boolean,
+  cudaDeviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+const decodeAxolotlProbe = Schema.decodeUnknownOption(Schema.fromJsonString(AxolotlProbeResult));
 
 export interface ResolvedPython {
   readonly executable: string;
@@ -103,11 +131,26 @@ export class Capabilities extends Context.Service<Capabilities, CapabilitiesShap
   "t3/rl/Capabilities",
 ) {}
 
-const candidateExecutables = (): ReadonlyArray<string> => {
-  const configured = process.env["T3RL_PYTHON"];
-  return configured !== undefined && configured.trim().length > 0
-    ? [configured.trim()]
-    : ["python3", "python"];
+/**
+ * Runners whose dependencies cannot coexist get their own interpreter. The
+ * variable is derived from the runner id so adding a backend needs no new
+ * plumbing here.
+ */
+const runnerEnvironmentVariable = (runnerId: string): string =>
+  `T3RL_PYTHON_${runnerId.toUpperCase().replaceAll("-", "_")}`;
+
+/**
+ * A dedicated interpreter is tried before the shared one. An explicitly
+ * configured interpreter never falls back to whatever is on PATH: silently
+ * running a different environment than the one a researcher named is how a run
+ * ends up unreproducible.
+ */
+const candidateExecutables = (runnerId?: string): ReadonlyArray<string> => {
+  const configured = [
+    runnerId === undefined ? undefined : process.env[runnerEnvironmentVariable(runnerId)],
+    process.env["T3RL_PYTHON"],
+  ].flatMap((value) => (value !== undefined && value.trim().length > 0 ? [value.trim()] : []));
+  return configured.length > 0 ? configured : ["python3", "python"];
 };
 
 const parseVersion = (
@@ -142,22 +185,25 @@ const makeCapabilities = Effect.gen(function* () {
       Effect.orElseSucceed(() => null),
     );
 
-  const findPython = Effect.gen(function* () {
-    for (const executable of candidateExecutables()) {
-      const resolved = yield* probe(executable);
-      if (resolved !== null) return resolved;
-    }
-    return null;
-  });
-
-  const resolvePython: CapabilitiesShape["resolvePython"] = () =>
+  const findPython = (runnerId?: string) =>
     Effect.gen(function* () {
-      const resolved = yield* findPython;
+      for (const executable of candidateExecutables(runnerId)) {
+        const resolved = yield* probe(executable);
+        if (resolved !== null) return resolved;
+      }
+      return null;
+    });
+
+  const resolveRunnerPython = (runnerId?: string) =>
+    Effect.gen(function* () {
+      const resolved = yield* findPython(runnerId);
       if (resolved === null) {
         return yield* new RlRunStartError({ code: "PythonNotFound", detail: REMEDY });
       }
       return resolved;
     });
+
+  const resolvePython: CapabilitiesShape["resolvePython"] = () => resolveRunnerPython();
 
   const fingerprint = (value: string) =>
     crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(
@@ -197,15 +243,53 @@ const makeCapabilities = Effect.gen(function* () {
         Effect.orElseSucceed(() => null),
       );
 
+  const probeAxolotl = (python: ResolvedPython) =>
+    runner
+      .run({
+        command: python.executable,
+        args: ["-c", AXOLOTL_PROBE],
+        timeout: "60 seconds",
+        maxOutputBytes: 16 * 1024,
+      })
+      .pipe(
+        Effect.map((output) => {
+          if (output.code !== 0) return null;
+          return Option.getOrNull(decodeAxolotlProbe(output.stdout.trim()));
+        }),
+        Effect.orElseSucceed(() => null),
+      );
+
   const resolveRunner: CapabilitiesShape["resolveRunner"] = (input) =>
     Effect.gen(function* () {
-      const python = yield* resolvePython();
+      const python = yield* resolveRunnerPython(input.runnerId);
       if (input.runnerId === "fake") {
         return {
           ...python,
           runnerId: "fake",
           runnerVersion: "0.1.0",
           environmentFingerprint: yield* fingerprint(`python=${python.version};runner=fake@0.1.0`),
+        };
+      }
+      if (input.runnerId === "axolotl") {
+        const probed = yield* probeAxolotl(python);
+        if (probed === null || probed.axolotl !== SUPPORTED_AXOLOTL_VERSION) {
+          return yield* new RlRunStartError({ code: "RunnerUnavailable", detail: AXOLOTL_REMEDY });
+        }
+        if (!probed.cudaAvailable) {
+          return yield* new RlRunStartError({
+            code: "RunnerUnavailable",
+            detail: AXOLOTL_CUDA_REMEDY,
+          });
+        }
+        return {
+          executable: python.executable,
+          version: probed.python,
+          runnerId: input.runnerId,
+          runnerVersion: probed.axolotl,
+          environmentFingerprint: yield* fingerprint(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off - canonical bounded probe.
+            JSON.stringify(probed),
+          ),
         };
       }
       if (input.runnerId === "trl") {
@@ -256,10 +340,13 @@ const makeCapabilities = Effect.gen(function* () {
 
   const report: CapabilitiesShape["report"] = () =>
     Effect.gen(function* () {
-      const resolved = yield* findPython;
+      const resolved = yield* findPython();
       const sb3 = resolved === null ? null : yield* probeSb3(resolved);
       const trl = resolved === null ? null : yield* probeTrl(resolved);
       const trlVersionSupported = trl?.trl === SUPPORTED_TRL_VERSION;
+      const axolotlPython = yield* findPython("axolotl");
+      const axolotl = axolotlPython === null ? null : yield* probeAxolotl(axolotlPython);
+      const axolotlVersionSupported = axolotl?.axolotl === SUPPORTED_AXOLOTL_VERSION;
       return {
         runners: [
           {
@@ -299,6 +386,25 @@ const makeCapabilities = Effect.gen(function* () {
                   : trl?.cudaAvailable === true
                     ? null
                     : TRL_CUDA_REMEDY,
+          },
+          {
+            runnerId: "axolotl",
+            available: axolotlVersionSupported && axolotl?.cudaAvailable === true,
+            version: axolotl?.axolotl ?? null,
+            failureCode:
+              axolotlPython === null
+                ? ("PythonNotFound" as const)
+                : !axolotlVersionSupported || axolotl?.cudaAvailable !== true
+                  ? ("RunnerUnavailable" as const)
+                  : null,
+            remedy:
+              axolotlPython === null
+                ? REMEDY
+                : !axolotlVersionSupported
+                  ? AXOLOTL_REMEDY
+                  : axolotl?.cudaAvailable === true
+                    ? null
+                    : AXOLOTL_CUDA_REMEDY,
           },
         ],
         experiments: [],
