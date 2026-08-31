@@ -70,6 +70,9 @@ Every adapter must:
 8. Translate cancellation to the whole topology and report exactly one terminal result.
 9. Record launcher, strategy, world size, rank topology, and rollout-engine evidence in the manifest.
 10. Enforce token, wall-clock, artifact, and accelerator budgets before and during execution.
+11. Derive reported statistics from every scored sample, never from the bounded evidence
+    excerpt, and divide that excerpt between phases so a long training phase cannot leave a
+    run without post-training evidence.
 
 ## Delivery order
 

@@ -17,7 +17,6 @@ import os
 import platform
 import random
 import re
-import statistics
 import sys
 import threading
 import time
@@ -272,9 +271,109 @@ def split_dataset(
     return records[:-evaluation_rows], records[-evaluation_rows:]
 
 
-def make_exact_integer_reward(
-    retained_samples: list[dict[str, Any]], retain_limit: int
-) -> Callable[..., list[float]]:
+# Phases a run reports on, in the order they occur. The evidence budget is
+# divided between them so a long training phase cannot spend the whole budget
+# before the post-training evaluation runs.
+EVIDENCE_PHASES = ("evaluation-before", "training", "evaluation-after")
+
+
+class EvidenceLedger:
+    """
+    Verifier outcomes for one run.
+
+    Counts and reward statistics cover every completion the verifier scored.
+    The retained samples are a bounded excerpt kept for the replay artifact.
+    The two are deliberately separate: a retention budget bounds how much
+    evidence a run stores, and must never bound what a run measures.
+    """
+
+    def __init__(self, retain_limit: int) -> None:
+        self._phase_retain_limit = max(1, retain_limit // len(EVIDENCE_PHASES))
+        self._samples: list[dict[str, Any]] = []
+        self._totals: dict[str, dict[str, float]] = {}
+
+    def _phase_totals(self, phase: str) -> dict[str, float]:
+        return self._totals.setdefault(
+            phase,
+            {"count": 0.0, "passed": 0.0, "sum": 0.0, "squareSum": 0.0, "retained": 0.0},
+        )
+
+    def record(
+        self,
+        *,
+        phase: str,
+        prompt: str,
+        expected: str,
+        completion: str,
+        parsed: str | None,
+        reward: float,
+    ) -> None:
+        totals = self._phase_totals(phase)
+        totals["count"] += 1.0
+        totals["passed"] += 1.0 if reward == 1.0 else 0.0
+        totals["sum"] += reward
+        totals["squareSum"] += reward * reward
+        if totals["retained"] >= self._phase_retain_limit:
+            return
+        totals["retained"] += 1.0
+        self._samples.append(
+            {
+                "phase": phase,
+                "prompt": prompt,
+                "expected": expected,
+                "completion": completion,
+                "parsedAnswer": parsed,
+                "reward": reward,
+                "verifier": {"id": "exact-integer-v1", "passed": reward == 1.0},
+            }
+        )
+
+    @property
+    def samples(self) -> list[dict[str, Any]]:
+        return self._samples
+
+    @property
+    def retained_count(self) -> int:
+        return len(self._samples)
+
+    def summarize(self, phase: str) -> dict[str, Any]:
+        samples = [sample for sample in self._samples if sample["phase"] == phase]
+        totals = self._totals.get(phase)
+        count = 0 if totals is None else int(totals["count"])
+        if totals is None or count == 0:
+            return {
+                "phase": phase,
+                "sampleCount": 0,
+                "rewardMean": None,
+                "rewardStd": None,
+                "verifierPassRate": None,
+                "samples": samples,
+            }
+        mean = totals["sum"] / count
+        # Population variance, clamped because the streaming form can land a
+        # few ulps below zero when every reward is identical.
+        variance = max(totals["squareSum"] / count - mean * mean, 0.0)
+        return {
+            "phase": phase,
+            "sampleCount": count,
+            "rewardMean": mean,
+            "rewardStd": math.sqrt(variance),
+            "verifierPassRate": totals["passed"] / count,
+            "samples": samples,
+        }
+
+
+def resolve_evidence_phase(
+    requested_phase: str | None, trainer_state: Any
+) -> str:
+    if requested_phase != "evaluation":
+        return "training"
+    if int(getattr(trainer_state, "global_step", 0)) == 0:
+        return "evaluation-before"
+    return "evaluation-after"
+
+
+def make_exact_integer_reward(ledger: EvidenceLedger) -> Callable[..., list[float]]:
     def exact_integer_reward(
         completions: list[Any],
         answer: list[str],
@@ -291,59 +390,25 @@ def make_exact_integer_reward(
             parsed = extract_final_integer(text)
             reward = 1.0 if parsed == expected else 0.0
             rewards.append(reward)
-            if len(retained_samples) < retain_limit:
-                prompt = (
-                    prompts[index]
-                    if prompts is not None and index < len(prompts)
-                    else ""
-                )
-                requested_phase = (
-                    evidencePhase[index]
-                    if evidencePhase is not None and index < len(evidencePhase)
-                    else "training"
-                )
-                phase = (
-                    "evaluation-before"
-                    if requested_phase == "evaluation"
-                    and int(getattr(trainer_state, "global_step", 0)) == 0
-                    else "evaluation-after"
-                    if requested_phase == "evaluation"
-                    else "training"
-                )
-                retained_samples.append(
-                    {
-                        "phase": phase,
-                        "prompt": completion_text(prompt),
-                        "expected": expected,
-                        "completion": text,
-                        "parsedAnswer": parsed,
-                        "reward": reward,
-                        "verifier": {
-                            "id": "exact-integer-v1",
-                            "passed": reward == 1.0,
-                        },
-                    }
-                )
+            prompt = (
+                prompts[index] if prompts is not None and index < len(prompts) else ""
+            )
+            requested_phase = (
+                evidencePhase[index]
+                if evidencePhase is not None and index < len(evidencePhase)
+                else "training"
+            )
+            ledger.record(
+                phase=resolve_evidence_phase(requested_phase, trainer_state),
+                prompt=completion_text(prompt),
+                expected=expected,
+                completion=text,
+                parsed=parsed,
+                reward=reward,
+            )
         return rewards
 
     return exact_integer_reward
-
-
-def summarize_samples(
-    retained_samples: list[dict[str, Any]], phase: str
-) -> dict[str, Any]:
-    samples = [sample for sample in retained_samples if sample.get("phase") == phase]
-    rewards = [float(sample["reward"]) for sample in samples]
-    return {
-        "phase": phase,
-        "sampleCount": len(samples),
-        "rewardMean": statistics.fmean(rewards) if rewards else None,
-        "rewardStd": statistics.pstdev(rewards) if rewards else None,
-        "verifierPassRate": sum(reward == 1.0 for reward in rewards) / len(rewards)
-        if rewards
-        else None,
-        "samples": samples,
-    }
 
 
 def write_json(run_dir: str, relative_path: str, value: Any) -> None:
@@ -494,7 +559,7 @@ def run(args: argparse.Namespace) -> int:
 
     started = time.monotonic()
     os.makedirs(args.run_dir, exist_ok=True)
-    retained_samples: list[dict[str, Any]] = []
+    ledger = EvidenceLedger(config["retainSampleCount"])
     latest_step = 0
     evaluation_passes = 0
     stop_heartbeat = threading.Event()
@@ -686,9 +751,7 @@ def run(args: argparse.Namespace) -> int:
         )
         trainer = deps["GRPOTrainer"](
             model=config["modelId"],
-            reward_funcs=make_exact_integer_reward(
-                retained_samples, config["retainSampleCount"]
-            ),
+            reward_funcs=make_exact_integer_reward(ledger),
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
@@ -711,9 +774,9 @@ def run(args: argparse.Namespace) -> int:
         heartbeat_thread.join(timeout=2)
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    training = summarize_samples(retained_samples, "training")
-    evaluation_before = summarize_samples(retained_samples, "evaluation-before")
-    evaluation_after = summarize_samples(retained_samples, "evaluation-after")
+    training = ledger.summarize("training")
+    evaluation_before = ledger.summarize("evaluation-before")
+    evaluation_after = ledger.summarize("evaluation-after")
     before_pass_rate = evaluation_before["verifierPassRate"]
     after_pass_rate = evaluation_after["verifierPassRate"]
     evaluation_delta = (
@@ -733,7 +796,7 @@ def run(args: argparse.Namespace) -> int:
         "verifierId": "exact-integer-v1",
         "seed": args.seed,
         "optimizerSteps": int(getattr(result, "global_step", latest_step)),
-        "retainedSamples": len(retained_samples),
+        "retainedSamples": ledger.retained_count,
         "trainingVerifierPassRate": training["verifierPassRate"],
         "evaluationBeforePassRate": before_pass_rate,
         "evaluationAfterPassRate": after_pass_rate,
@@ -762,11 +825,11 @@ def run(args: argparse.Namespace) -> int:
     }
     write_json(args.run_dir, "evaluation.json", evaluation)
     emit({"type": "artifact", "kind": "evaluation", "path": "evaluation.json"})
-    if retained_samples:
+    if ledger.samples:
         replay_samples = [
             sample
             for phase in ["evaluation-before", "evaluation-after", "training"]
-            for sample in retained_samples
+            for sample in ledger.samples
             if sample.get("phase") == phase
         ]
         replay = {

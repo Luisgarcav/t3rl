@@ -90,14 +90,15 @@ class TrlWorkerUnitTest(unittest.TestCase):
         self.assertEqual(trl_worker.extract_final_integer("-1,024"), "-1024")
         self.assertIsNone(trl_worker.extract_final_integer("no integer"))
 
-        samples = []
-        reward = trl_worker.make_exact_integer_reward(samples, 2)
+        ledger = trl_worker.EvidenceLedger(6)
+        reward = trl_worker.make_exact_integer_reward(ledger)
         values = reward(
             completions=["The answer is 12", "I think 8"],
             answer=["12", "9"],
             prompts=["7 + 5", "18 - 9"],
         )
         self.assertEqual(values, [1.0, 0.0])
+        samples = ledger.samples
         self.assertTrue(samples[0]["verifier"]["passed"])
         self.assertFalse(samples[1]["verifier"]["passed"])
         self.assertEqual(samples[0]["phase"], "training")
@@ -105,8 +106,8 @@ class TrlWorkerUnitTest(unittest.TestCase):
             reward(completions=["12"], answer=[])
 
     def test_verifier_labels_before_and_after_evaluation_evidence(self) -> None:
-        samples = []
-        reward = trl_worker.make_exact_integer_reward(samples, 4)
+        ledger = trl_worker.EvidenceLedger(6)
+        reward = trl_worker.make_exact_integer_reward(ledger)
         reward(
             completions=["12"],
             answer=["12"],
@@ -120,11 +121,57 @@ class TrlWorkerUnitTest(unittest.TestCase):
             trainer_state=mock.Mock(global_step=8),
         )
 
-        before = trl_worker.summarize_samples(samples, "evaluation-before")
-        after = trl_worker.summarize_samples(samples, "evaluation-after")
+        before = ledger.summarize("evaluation-before")
+        after = ledger.summarize("evaluation-after")
         self.assertEqual(before["verifierPassRate"], 1.0)
         self.assertEqual(after["verifierPassRate"], 0.0)
         self.assertEqual(before["rewardStd"], 0.0)
+
+    def test_evidence_budget_does_not_truncate_the_measurement(self) -> None:
+        ledger = trl_worker.EvidenceLedger(3)
+        reward = trl_worker.make_exact_integer_reward(ledger)
+
+        reward(completions=["1"] * 40, answer=["1"] * 40)
+
+        training = ledger.summarize("training")
+        self.assertEqual(training["sampleCount"], 40)
+        self.assertEqual(training["verifierPassRate"], 1.0)
+        self.assertEqual(len(training["samples"]), 1)
+
+    def test_training_evidence_cannot_starve_the_after_evaluation(self) -> None:
+        ledger = trl_worker.EvidenceLedger(9)
+        reward = trl_worker.make_exact_integer_reward(ledger)
+
+        reward(
+            completions=["12"],
+            answer=["12"],
+            evidencePhase=["evaluation"],
+            trainer_state=mock.Mock(global_step=0),
+        )
+        reward(completions=["1"] * 50, answer=["1"] * 50)
+        reward(
+            completions=["11"],
+            answer=["12"],
+            evidencePhase=["evaluation"],
+            trainer_state=mock.Mock(global_step=8),
+        )
+
+        after = ledger.summarize("evaluation-after")
+        self.assertEqual(after["sampleCount"], 1)
+        self.assertEqual(after["verifierPassRate"], 0.0)
+        self.assertEqual(len(after["samples"]), 1)
+
+    def test_reward_statistics_cover_every_completion(self) -> None:
+        ledger = trl_worker.EvidenceLedger(3)
+        reward = trl_worker.make_exact_integer_reward(ledger)
+
+        reward(completions=["1", "2", "1", "2"], answer=["1", "1", "1", "1"])
+
+        training = ledger.summarize("training")
+        self.assertEqual(training["sampleCount"], 4)
+        self.assertEqual(training["rewardMean"], 0.5)
+        self.assertEqual(training["rewardStd"], 0.5)
+        self.assertEqual(training["verifierPassRate"], 0.5)
 
     def test_immutable_model_revision_does_not_require_registry_resolution(
         self,
