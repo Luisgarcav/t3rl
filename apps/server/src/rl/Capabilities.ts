@@ -20,12 +20,17 @@ import * as ProcessRunner from "../processRunner.ts";
 
 /** Gymnasium and Stable-Baselines3 both require 3.10 or newer. */
 const MINIMUM_PYTHON = { major: 3, minor: 10 } as const;
+const SUPPORTED_TRL_VERSION = "1.10.0";
 
 const PYTHON_VERSION_PATTERN = /^Python (\d+)\.(\d+)(?:\.(\d+))?/m;
 
 const REMEDY = `Install Python ${MINIMUM_PYTHON.major}.${MINIMUM_PYTHON.minor} or newer, or set T3RL_PYTHON to an interpreter path.`;
 const SB3_REMEDY =
   "Select a Python 3.10–3.13 virtual environment with Gymnasium, Stable-Baselines3, NumPy, and PyTorch by setting T3RL_PYTHON.";
+const TRL_REMEDY =
+  "Create a uv environment and install the optional LLM runtime with `uv pip install --python .venv/bin/python -e './python[llm]'`, then set T3RL_PYTHON to that interpreter.";
+const TRL_CUDA_REMEDY =
+  "The bundled GRPO/RLVR experiment requires a CUDA GPU visible to the configured PyTorch runtime.";
 
 const SB3_PROBE = `
 import json, os, platform, sys
@@ -40,6 +45,12 @@ finally:
 print(json.dumps({"executable": os.path.realpath(sys.executable), "python": platform.python_version(), "platform": platform.platform(), "stableBaselines3": stable_baselines3.__version__, "gymnasium": gymnasium.__version__, "numpy": numpy.__version__, "torch": torch.__version__}, sort_keys=True, separators=(",", ":")))
 `;
 
+const TRL_PROBE = `
+import importlib.metadata as metadata, json, os, platform, sys
+import accelerate, datasets, torch, transformers, trl
+print(json.dumps({"executable": os.path.realpath(sys.executable), "python": platform.python_version(), "platform": platform.platform(), "trl": metadata.version("trl"), "transformers": metadata.version("transformers"), "datasets": metadata.version("datasets"), "accelerate": metadata.version("accelerate"), "torch": metadata.version("torch"), "cudaAvailable": torch.cuda.is_available(), "cudaDeviceCount": torch.cuda.device_count()}, sort_keys=True, separators=(",", ":")))
+`;
+
 const Sb3ProbeResult = Schema.Struct({
   executable: Schema.String.check(Schema.isMaxLength(1024)),
   python: Schema.String.check(Schema.isMaxLength(64)),
@@ -50,6 +61,20 @@ const Sb3ProbeResult = Schema.Struct({
   torch: Schema.String.check(Schema.isMaxLength(64)),
 });
 const decodeSb3Probe = Schema.decodeUnknownOption(Schema.fromJsonString(Sb3ProbeResult));
+
+const TrlProbeResult = Schema.Struct({
+  executable: Schema.String.check(Schema.isMaxLength(1024)),
+  python: Schema.String.check(Schema.isMaxLength(64)),
+  platform: Schema.String.check(Schema.isMaxLength(256)),
+  trl: Schema.String.check(Schema.isMaxLength(64)),
+  transformers: Schema.String.check(Schema.isMaxLength(64)),
+  datasets: Schema.String.check(Schema.isMaxLength(64)),
+  accelerate: Schema.String.check(Schema.isMaxLength(64)),
+  torch: Schema.String.check(Schema.isMaxLength(64)),
+  cudaAvailable: Schema.Boolean,
+  cudaDeviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+const decodeTrlProbe = Schema.decodeUnknownOption(Schema.fromJsonString(TrlProbeResult));
 
 export interface ResolvedPython {
   readonly executable: string;
@@ -156,6 +181,22 @@ const makeCapabilities = Effect.gen(function* () {
         Effect.orElseSucceed(() => null),
       );
 
+  const probeTrl = (python: ResolvedPython) =>
+    runner
+      .run({
+        command: python.executable,
+        args: ["-c", TRL_PROBE],
+        timeout: "20 seconds",
+        maxOutputBytes: 16 * 1024,
+      })
+      .pipe(
+        Effect.map((output) => {
+          if (output.code !== 0) return null;
+          return Option.getOrNull(decodeTrlProbe(output.stdout.trim()));
+        }),
+        Effect.orElseSucceed(() => null),
+      );
+
   const resolveRunner: CapabilitiesShape["resolveRunner"] = (input) =>
     Effect.gen(function* () {
       const python = yield* resolvePython();
@@ -165,6 +206,29 @@ const makeCapabilities = Effect.gen(function* () {
           runnerId: "fake",
           runnerVersion: "0.1.0",
           environmentFingerprint: yield* fingerprint(`python=${python.version};runner=fake@0.1.0`),
+        };
+      }
+      if (input.runnerId === "trl") {
+        const probe = yield* probeTrl(python);
+        if (probe === null || probe.trl !== SUPPORTED_TRL_VERSION) {
+          return yield* new RlRunStartError({ code: "RunnerUnavailable", detail: TRL_REMEDY });
+        }
+        if (!probe.cudaAvailable) {
+          return yield* new RlRunStartError({ code: "RunnerUnavailable", detail: TRL_CUDA_REMEDY });
+        }
+        return {
+          // Keep the configured launcher instead of the probe's realpath. Virtual
+          // environments created by tools such as uv commonly symlink their
+          // launcher to a base interpreter; spawning that realpath would bypass
+          // the environment's sys.prefix and installed packages.
+          executable: python.executable,
+          version: probe.python,
+          runnerId: input.runnerId,
+          runnerVersion: probe.trl,
+          environmentFingerprint: yield* fingerprint(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off - canonical bounded probe.
+            JSON.stringify(probe),
+          ),
         };
       }
       if (input.runnerId !== "stable-baselines3") {
@@ -179,7 +243,7 @@ const makeCapabilities = Effect.gen(function* () {
         return yield* new RlRunStartError({ code: "RunnerUnavailable", detail: SB3_REMEDY });
       }
       return {
-        executable: probe.executable,
+        executable: python.executable,
         version: probe.python,
         runnerId: input.runnerId,
         runnerVersion: probe.stableBaselines3,
@@ -194,6 +258,8 @@ const makeCapabilities = Effect.gen(function* () {
     Effect.gen(function* () {
       const resolved = yield* findPython;
       const sb3 = resolved === null ? null : yield* probeSb3(resolved);
+      const trl = resolved === null ? null : yield* probeTrl(resolved);
+      const trlVersionSupported = trl?.trl === SUPPORTED_TRL_VERSION;
       return {
         runners: [
           {
@@ -214,6 +280,25 @@ const makeCapabilities = Effect.gen(function* () {
                   ? ("RunnerUnavailable" as const)
                   : null,
             remedy: resolved === null ? REMEDY : sb3 === null ? SB3_REMEDY : null,
+          },
+          {
+            runnerId: "trl",
+            available: trlVersionSupported && trl?.cudaAvailable === true,
+            version: trl?.trl ?? null,
+            failureCode:
+              resolved === null
+                ? ("PythonNotFound" as const)
+                : !trlVersionSupported || trl?.cudaAvailable !== true
+                  ? ("RunnerUnavailable" as const)
+                  : null,
+            remedy:
+              resolved === null
+                ? REMEDY
+                : !trlVersionSupported
+                  ? TRL_REMEDY
+                  : trl?.cudaAvailable === true
+                    ? null
+                    : TRL_CUDA_REMEDY,
           },
         ],
         experiments: [],

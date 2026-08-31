@@ -47,6 +47,28 @@ describe("RL algorithm visualization", () => {
     expect(spec.edges.at(-1)).toEqual({ from: "evaluate", to: "act", kind: "loop" });
   });
 
+  it("shows the completion, verifier, advantage, and update loop for GRPO", () => {
+    const spec = resolveRlAlgorithmVisualization(manifest("GRPO"), "arithmetic-grpo-rlvr");
+
+    expect(spec.algorithm).toBe("GRPO");
+    expect(spec.family).toBe("Online RL for language models");
+    expect(spec.stages.map((stage) => stage.id)).toEqual([
+      "prompts",
+      "sample",
+      "verify",
+      "advantage",
+      "update",
+      "evaluate",
+      "inspect",
+    ]);
+    expect(spec.stages.find((stage) => stage.id === "verify")?.evidenceMetricKeys).toContain(
+      "train/verifier_pass_rate",
+    );
+    expect(spec.stages.find((stage) => stage.id === "evaluate")?.evidenceMetricKeys).toContain(
+      "eval/verifier_pass_rate",
+    );
+  });
+
   it("uses an honest generic flow for an unknown algorithm", () => {
     const spec = resolveRlAlgorithmVisualization(manifest("MyOptimizer"), "custom");
 

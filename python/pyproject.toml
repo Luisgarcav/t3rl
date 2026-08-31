@@ -7,3 +7,4 @@ dependencies = ["gymnasium==1.3.0", "stable-baselines3==2.9.0"]
 
 [project.optional-dependencies]
 dev = []
+llm = ["trl==1.10.0"]

@@ -16,6 +16,10 @@ interface ChartGeometry {
   readonly path: string;
   readonly minimum: number;
   readonly maximum: number;
+  readonly latestPoint: {
+    readonly x: number;
+    readonly y: number;
+  };
 }
 
 function buildChartGeometry(points: ReturnType<typeof selectRlMetricPoints>): ChartGeometry | null {
@@ -26,18 +30,25 @@ function buildChartGeometry(points: ReturnType<typeof selectRlMetricPoints>): Ch
   const maximumStep = Math.max(...steps);
   const minimum = Math.min(...values);
   const maximum = Math.max(...values);
-  const stepRange = Math.max(1, maximumStep - minimumStep);
-  const valueRange = Math.max(1e-9, maximum - minimum);
+  const stepRange = maximumStep - minimumStep;
+  const valueRange = maximum - minimum;
+  const valueMagnitude = Math.max(Math.abs(minimum), Math.abs(maximum), 1e-12);
+  const effectivelyConstant = valueRange <= Math.max(1e-12, valueMagnitude * 1e-6);
   const width = CHART_WIDTH - CHART_PADDING * 2;
   const height = CHART_HEIGHT - CHART_PADDING * 2;
-  const path = points
-    .map((point, index) => {
-      const x = CHART_PADDING + ((point.step - minimumStep) / stepRange) * width;
-      const y = CHART_HEIGHT - CHART_PADDING - ((point.value - minimum) / valueRange) * height;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
+  const chartPoints = points.map((point) => ({
+    x:
+      stepRange === 0
+        ? CHART_WIDTH / 2
+        : CHART_PADDING + ((point.step - minimumStep) / stepRange) * width,
+    y: effectivelyConstant
+      ? CHART_HEIGHT / 2
+      : CHART_HEIGHT - CHART_PADDING - ((point.value - minimum) / valueRange) * height,
+  }));
+  const path = chartPoints
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
     .join(" ");
-  return { path, minimum, maximum };
+  return { path, minimum, maximum, latestPoint: chartPoints.at(-1)! };
 }
 
 export function RlMetricChart({
@@ -95,6 +106,16 @@ export function RlMetricChart({
                 vectorEffect="non-scaling-stroke"
               />
             </svg>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background"
+              data-slot="rl-metric-chart-latest-point"
+              style={{
+                backgroundColor: definition.color,
+                left: `${(geometry.latestPoint.x / CHART_WIDTH) * 100}%`,
+                top: `${(geometry.latestPoint.y / CHART_HEIGHT) * 100}%`,
+              }}
+            />
             <span className="absolute left-2 top-1 font-mono text-[9px] tabular-nums text-muted-foreground/70">
               {formatRlMetricValue(geometry.maximum)}
             </span>

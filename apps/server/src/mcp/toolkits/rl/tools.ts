@@ -237,7 +237,7 @@ export const RlCompareRunsTool = readonlyTool(
 export const RlReadArtifactTool = readonlyTool(
   Tool.make("rl_read_artifact", {
     description:
-      "Read a bounded textual artifact from a project-scoped RL run, including logs, summaries, evaluations, manifests, and trajectory replays used by the Behavior view. Binary models and unsupported media types are refused.",
+      "Read a bounded textual artifact from a project-scoped RL run, including logs, summaries, evaluations, manifests, environment trajectories, and prompt/completion verifier replays used by the Behavior view. Binary models and unsupported media types are refused.",
     parameters: Schema.Struct({
       runId: RunIdParameter,
       artifactId: Schema.String.annotate({ description: "Artifact ID returned by rl_get_run." })

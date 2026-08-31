@@ -78,10 +78,12 @@ desktop execution model.
 
 ### Python stays replaceable
 
-The first worker uses Gymnasium and Stable-Baselines3, but the server talks to a versioned process
-protocol rather than importing framework-specific concepts throughout the application. Later runner
-adapters may target CleanRL, RLlib, a cluster scheduler, or a project-defined command without
-changing the client-facing run model.
+The first control worker uses Gymnasium and Stable-Baselines3, and the first LLM post-training
+worker uses TRL/GRPO with a deterministic verifier and held-out before/after evaluation. The server
+talks to both through the same versioned process protocol rather than importing framework-specific
+concepts throughout the application. Axolotl, Accelerate launchers, FSDP, DeepSpeed, and vLLM stay
+behind adapters or sidecar ownership; they do not add framework-shaped lifecycle states to clients.
+See [Framework adapters](./rl-framework-adapters.md) for the compatibility boundary and status.
 
 ### Durable state is sparse; telemetry is bounded
 
@@ -114,12 +116,12 @@ apps/server
               │
               │ argv + versioned NDJSON over stdout
               ▼
-Python worker
-  runner adapter + Gymnasium + Stable-Baselines3
+Selected Python worker
+  Stable-Baselines3 control adapter or post-training framework adapter
               │
               ├─ metrics
-              ├─ final model
-              ├─ evaluation summary and replay
+              ├─ optional final model
+              ├─ before/after evaluation and behavior replay
               └─ resolved environment metadata
 ```
 

@@ -29,6 +29,10 @@ interface DataChartGeometry {
   readonly maximumStep: number;
   readonly minimumValue: number;
   readonly maximumValue: number;
+  readonly latestPoint: {
+    readonly x: number;
+    readonly y: number;
+  };
 }
 
 function metricLabel(metricKey: string): string {
@@ -57,21 +61,34 @@ function buildDataChartGeometry(selection: RlMetricDataSelection): DataChartGeom
   const maximumStep = Math.max(...steps);
   const minimumValue = Math.min(...values);
   const maximumValue = Math.max(...values);
-  const stepRange = Math.max(1, maximumStep - minimumStep);
-  const valueRange = Math.max(1e-9, maximumValue - minimumValue);
+  const stepRange = maximumStep - minimumStep;
+  const valueRange = maximumValue - minimumValue;
+  const valueMagnitude = Math.max(Math.abs(minimumValue), Math.abs(maximumValue), 1e-12);
+  const effectivelyConstant = valueRange <= Math.max(1e-12, valueMagnitude * 1e-6);
   const width = DATA_CHART_WIDTH - DATA_CHART_PADDING_X * 2;
   const height = DATA_CHART_HEIGHT - DATA_CHART_PADDING_Y * 2;
-  const path = points
-    .map((point, index) => {
-      const x = DATA_CHART_PADDING_X + ((point.step - minimumStep) / stepRange) * width;
-      const y =
-        DATA_CHART_HEIGHT -
+  const chartPoints = points.map((point) => ({
+    x:
+      stepRange === 0
+        ? DATA_CHART_WIDTH / 2
+        : DATA_CHART_PADDING_X + ((point.step - minimumStep) / stepRange) * width,
+    y: effectivelyConstant
+      ? DATA_CHART_HEIGHT / 2
+      : DATA_CHART_HEIGHT -
         DATA_CHART_PADDING_Y -
-        ((point.value - minimumValue) / valueRange) * height;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
+        ((point.value - minimumValue) / valueRange) * height,
+  }));
+  const path = chartPoints
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
     .join(" ");
-  return { path, minimumStep, maximumStep, minimumValue, maximumValue };
+  return {
+    path,
+    minimumStep,
+    maximumStep,
+    minimumValue,
+    maximumValue,
+    latestPoint: chartPoints.at(-1)!,
+  };
 }
 
 function DataChart({
@@ -122,6 +139,16 @@ function DataChart({
           vectorEffect="non-scaling-stroke"
         />
       </svg>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background"
+        data-slot="rl-data-chart-latest-point"
+        style={{
+          backgroundColor: metricColor(metricKey),
+          left: `${(geometry.latestPoint.x / DATA_CHART_WIDTH) * 100}%`,
+          top: `${(geometry.latestPoint.y / DATA_CHART_HEIGHT) * 100}%`,
+        }}
+      />
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 font-mono text-[10px] tabular-nums text-muted-foreground">
         <span>{formatRlMetricValue(geometry.maximumValue)}</span>
         <div className="flex items-end justify-between gap-4">

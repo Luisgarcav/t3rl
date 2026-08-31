@@ -56,18 +56,26 @@ The bundled catalog includes CartPole and Pendulum definitions. Arbitrary scalar
 configuration, model/evaluation/replay artifacts, lifecycle, cancellation, and source evidence use
 a runner-neutral protocol.
 
+The first LLM adapter uses TRL to execute a bounded, single-GPU GRPO/RLVR sample. It pins the model
+to a resolved Hub commit before training, hashes the bundled arithmetic dataset, records the exact
+verifier and dependency fingerprint, enforces generated-token, wall-clock, and GPU-hour bounds, and
+retains prompt/completion/verifier evidence in the existing replay artifact. Four versioned rows are
+held out from optimization and evaluated before and after training; aggregate and per-completion
+evidence is retained in `evaluation.json`. The manifest identifies the native TRL adapter, direct
+launcher, single-process strategy, and world size. Checkpoint retention, vLLM, arbitrary models,
+Axolotl execution, and distributed scheduling remain outside this slice.
+
 Adding broad execution should happen at runner adapters, in this order:
 
 1. Add more version-controlled environments and recurrent or goal-conditioned Stable-Baselines3
    variants only when their evaluation semantics are explicit.
-2. Add an offline adapter with immutable dataset identity, splits, behavior-policy evidence, and
+2. Expand the LLM adapter only after checkpoint retention, held-out prompt evaluation, tokenizer
+   and chat-template identity, and larger rollout-engine budgets have explicit contracts.
+3. Add an offline adapter with immutable dataset identity, splits, behavior-policy evidence, and
    offline-evaluation artifacts.
-3. Add a multi-agent adapter that preserves agent roles, centralized-training inputs, opponent or
+4. Add a multi-agent adapter that preserves agent roles, centralized-training inputs, opponent or
    self-play checkpoints, and per-agent metrics.
-4. Add model-based adapters with explicit real versus imagined steps and world-model artifacts.
-5. Add an LLM policy-optimization adapter with model/tokenizer/chat-template revisions, prompt and
-   dataset snapshots, rollout-engine identity, reference policy, token accounting, verifier
-   identity, sandbox evidence, and GPU-hour budgets.
+5. Add model-based adapters with explicit real versus imagined steps and world-model artifacts.
 
 Each adapter must emit the same bounded worker protocol. Framework-specific configuration and
 dependency probes stay at that boundary; orchestration, storage, and the UI remain algorithm-neutral.

@@ -1,0 +1,18 @@
+[
+  { "prompt": "What is 7 + 5?", "answer": "12" },
+  { "prompt": "What is 18 - 9?", "answer": "9" },
+  { "prompt": "What is 6 × 4?", "answer": "24" },
+  { "prompt": "What is 56 ÷ 8?", "answer": "7" },
+  { "prompt": "What is 13 + 29?", "answer": "42" },
+  { "prompt": "What is 81 - 37?", "answer": "44" },
+  { "prompt": "What is 9 × 7?", "answer": "63" },
+  { "prompt": "What is 96 ÷ 12?", "answer": "8" },
+  { "prompt": "What is 125 + 76?", "answer": "201" },
+  { "prompt": "What is 144 - 58?", "answer": "86" },
+  { "prompt": "What is 12 × 11?", "answer": "132" },
+  { "prompt": "What is 225 ÷ 15?", "answer": "15" },
+  { "prompt": "What is 34 + 68?", "answer": "102" },
+  { "prompt": "What is 200 - 117?", "answer": "83" },
+  { "prompt": "What is 14 × 6?", "answer": "84" },
+  { "prompt": "What is 169 ÷ 13?", "answer": "13" }
+]

@@ -58,6 +58,87 @@ export const RL_METRIC_DEFINITIONS: ReadonlyArray<RlMetricDefinition> = [
   },
 ];
 
+export const LLM_POST_TRAINING_METRIC_DEFINITIONS: ReadonlyArray<RlMetricDefinition> = [
+  {
+    key: "train/reward",
+    label: "Training reward",
+    description: "Mean reward across sampled completions",
+    color: "var(--color-info)",
+  },
+  {
+    key: "train/verifier_pass_rate",
+    label: "Verifier pass rate",
+    description: "Share of completions accepted by the verifier",
+    color: "var(--color-success)",
+  },
+  {
+    key: "eval/verifier_pass_rate",
+    label: "Held-out pass rate",
+    description: "Verifier success before and after training",
+    color: "var(--color-primary)",
+  },
+  {
+    key: "train/reward_std",
+    label: "Reward variability",
+    description: "Standard deviation across sampled rewards",
+    color: "var(--color-warning)",
+  },
+  {
+    key: "train/kl",
+    label: "KL divergence",
+    description: "Distance from the reference policy",
+    color: "var(--color-chart-4, var(--color-destructive))",
+  },
+  {
+    key: "train/entropy",
+    label: "Entropy",
+    description: "Completion distribution uncertainty",
+    color: "var(--color-chart-3, var(--color-success))",
+  },
+  {
+    key: "train/completion_length",
+    label: "Completion length",
+    description: "Mean sampled completion length",
+    color: "var(--color-warning)",
+  },
+  {
+    key: "train/loss",
+    label: "Policy loss",
+    description: "GRPO optimization loss",
+    color: "var(--color-chart-1, var(--color-primary))",
+  },
+  {
+    key: "train/learning_rate",
+    label: "Learning rate",
+    description: "Optimizer learning rate",
+    color: "var(--color-chart-2, var(--color-info))",
+  },
+  {
+    key: "system/generated_tokens_upper_bound",
+    label: "Generated-token bound",
+    description: "Conservative cumulative generation bound",
+    color: "var(--color-primary)",
+  },
+  {
+    key: "system/tokens_per_second",
+    label: "Token throughput",
+    description: "Observed cumulative processing rate",
+    color: "var(--color-info)",
+  },
+  {
+    key: "system/gpu_memory_allocated_gb",
+    label: "GPU memory",
+    description: "Allocated accelerator memory in GiB",
+    color: "var(--color-chart-3, var(--color-success))",
+  },
+];
+
+export function rlMetricDefinitionsForRunner(
+  runnerId: string | null | undefined,
+): ReadonlyArray<RlMetricDefinition> {
+  return runnerId === "trl" ? LLM_POST_TRAINING_METRIC_DEFINITIONS : RL_METRIC_DEFINITIONS;
+}
+
 export type RlStatusVariant = "error" | "info" | "outline" | "secondary" | "success" | "warning";
 
 export function rlStatusVariant(state: RlRunState): RlStatusVariant {
@@ -122,6 +203,12 @@ export function latestRlMetricValue(
 export function formatRlMetricValue(value: RlMetricBatch["values"][string] | undefined): string {
   if (value === undefined || value === null) return "—";
   if (typeof value === "string") return value.toUpperCase();
+  if (value !== 0 && Math.abs(value) < 0.0001) {
+    return value
+      .toExponential(2)
+      .replace(/\.0+e/, "e")
+      .replace(/(\.\d*[1-9])0+e/, "$1e");
+  }
   return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 

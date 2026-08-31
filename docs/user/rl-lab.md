@@ -22,14 +22,17 @@ A remote browser therefore controls the runner on its connected server, not on t
 
 ## Start a run
 
-The launch screen checks the server's runner capabilities before enabling **Start run**. If Python
-or the Stable-Baselines3 dependencies are unavailable, the warning includes the server-side remedy;
-RL Lab never installs packages automatically.
+The launch screen checks the server's runner capabilities before enabling **Start run**. If Python,
+Stable-Baselines3, TRL, or the CUDA runtime required by an experiment is unavailable, the warning
+includes the server-side remedy; RL Lab never installs packages automatically.
 
 Choose a catalog experiment, enter an integer seed, and start the run. The bundled
 Stable-Baselines3 catalog covers PPO, A2C, and DQN on `CartPole-v1`, plus SAC, TD3, and DDPG on
-continuous-control `Pendulum-v1`. A new request creates a new run, while transport retries are
-deduplicated by the server.
+continuous-control `Pendulum-v1`. The optional TRL catalog includes a bounded single-GPU GRPO/RLVR
+sample using `Qwen/Qwen2.5-0.5B-Instruct`, a versioned arithmetic dataset, and an exact-integer
+verifier. It keeps the last four versioned rows out of the optimizer dataset, evaluates that holdout
+before and after training, and records the comparison as metrics and an evaluation artifact. A new
+request creates a new run, while transport retries are deduplicated by the server.
 
 ## Monitor and reopen runs
 
@@ -43,8 +46,9 @@ opens its live view. The navigation under the lab header separates six investiga
 - **Algorithm** walks through a conceptual stage graph derived from the immutable resolved
   manifest. Its playback controls explain the algorithm; the highlighted stage is not presented as
   live worker execution unless later instrumentation explicitly reports that state.
-- **Behavior** replays bounded trajectory artifacts step by step, including observations, actions,
-  rewards, and terminal or truncated episode boundaries.
+- **Behavior** replays bounded evidence artifacts. Control runs show observations, actions, rewards,
+  and episode boundaries; LLM post-training runs show prompts, references, completions, parsed
+  answers, verifier decisions, and scalar rewards.
 - **Compare** aggregates exact-step observations across verified seeds for one experiment. Missing
   values remain missing, duplicate seeds are not counted twice, and configuration or environment
   drift is called out before interpretation.
@@ -58,20 +62,25 @@ does not imply completion; only the lifecycle status does.
 
 The default coding agent can use these same project-scoped utilities through the product-native RL
 Lab tools. It can inspect the experiment catalog, manifests, metrics, comparisons, textual artifacts,
-logs, evaluations, and trajectory replays without relying on screenshots. Starting or cancelling a
-run remains a permission-aware action. Turning off agent browser access disables only browser
-control; it does not remove the agent's RL Lab evidence tools.
+logs, evaluations, environment trajectories, and LLM prompt/completion verifier replays without
+relying on screenshots. Starting or cancelling a run remains a permission-aware action. Turning
+off agent browser access disables only browser control; it does not remove the agent's RL Lab
+evidence tools.
 
 From a run detail, **Use as baseline** saves that run into the workspace research configuration and
 opens Autoresearch. From Autoresearch, **Open run** returns to the selected baseline evidence.
 
 ## Interpretation limits
 
-The first release runs one seed at a time on CPU and does not resume a checkpoint after a server
-failure. Multi-seed comparison combines separate runs rather than launching a sweep, and uses the
-resolved seed as the statistical unit. Automatic diagnostics use configurable heuristics and should
-be checked against the environment, algorithm, reward scale, and emission cadence. Custom experiment
-catalogs and distributed or GPU execution remain outside the current scope.
+Each run uses one seed and one local worker process, and does not resume after a server failure.
+Control experiments run on CPU; the bundled GRPO preview requires CUDA, records token, wall-clock,
+and GPU-hour limits, and intentionally retains no checkpoint. Its small fixed holdout demonstrates
+the before/after evaluation path but is not a statistically strong benchmark. It does not yet
+support arbitrary models, vLLM, Axolotl execution, or distributed training. Multi-seed comparison
+combines separate runs rather than launching a sweep, and uses the resolved seed as the statistical
+unit.
+Automatic diagnostics use configurable heuristics and should be checked against the task,
+algorithm, reward scale, and emission cadence.
 
 ## Research specialists
 
@@ -114,6 +123,7 @@ Every research-catalog entry supports planning and evidence review. The surface 
 execution availability: the integrated Stable-Baselines3 path supports PPO and A2C for discrete or
 continuous control, DQN for discrete control, and SAC, TD3, and DDPG for continuous control. A run
 still requires a matching version-controlled experiment and a successful server capability probe.
+The integrated TRL preview adds GRPO with verifiable rewards for its bundled model and dataset.
 Other methods require a worker adapter; selecting one never pretends that its dependencies are
 installed.
 

@@ -4,6 +4,8 @@ import {
   formatRlDuration,
   formatRlMetricValue,
   latestRlMetricValue,
+  LLM_POST_TRAINING_METRIC_DEFINITIONS,
+  rlMetricDefinitionsForRunner,
   rlStatusVariant,
   selectRlMetricPoints,
 } from "./rlPresentation";
@@ -13,6 +15,17 @@ describe("RL presentation", () => {
     expect(rlStatusVariant("running")).toBe("success");
     expect(rlStatusVariant("failed")).toBe("error");
     expect(rlStatusVariant("cancelling")).toBe("warning");
+  });
+
+  it("selects LLM post-training metrics for TRL runs", () => {
+    expect(rlMetricDefinitionsForRunner("trl")).toBe(LLM_POST_TRAINING_METRIC_DEFINITIONS);
+    expect(LLM_POST_TRAINING_METRIC_DEFINITIONS.map((definition) => definition.key)).toContain(
+      "eval/verifier_pass_rate",
+    );
+    expect(LLM_POST_TRAINING_METRIC_DEFINITIONS.map((definition) => definition.key)).toContain(
+      "system/tokens_per_second",
+    );
+    expect(rlMetricDefinitionsForRunner("stable-baselines3")[0]?.key).toBe("train/return");
   });
 
   it("keeps only finite chart points while preserving explicit latest markers", () => {
@@ -25,6 +38,8 @@ describe("RL presentation", () => {
     expect(selectRlMetricPoints(metrics, "train/loss")).toEqual([{ step: 1, value: 2 }]);
     expect(latestRlMetricValue(metrics, "train/loss")).toBe("nan");
     expect(formatRlMetricValue("nan")).toBe("NAN");
+    expect(formatRlMetricValue(0.000005)).toBe("5e-6");
+    expect(formatRlMetricValue(0.0000125)).toBe("1.25e-5");
   });
 
   it("downsamples long series and always keeps the final point", () => {

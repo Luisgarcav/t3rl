@@ -45,6 +45,68 @@ interface AlgorithmTemplate {
 }
 
 const ALGORITHM_TEMPLATES: Readonly<Record<string, AlgorithmTemplate>> = {
+  GRPO: {
+    algorithm: "GRPO",
+    family: "Online RL for language models",
+    summary:
+      "Evaluate a held-out baseline, sample and verify completion groups, update the policy under a KL constraint, then evaluate again.",
+    stages: [
+      stage(
+        "prompts",
+        "Select prompts",
+        "A bounded, versioned dataset supplies prompts and reference answers.",
+        "Prompt dataset and training seed",
+        "Prompt minibatch",
+      ),
+      stage(
+        "sample",
+        "Sample completion groups",
+        "The current policy generates multiple completions for each prompt.",
+        "Prompt minibatch and current language model",
+        "Completion groups and token log probabilities",
+        ["train/completion_length"],
+      ),
+      stage(
+        "verify",
+        "Verify outcomes",
+        "A deterministic exact-answer verifier converts each completion into a scalar reward.",
+        "Completions and reference answers",
+        "Per-completion rewards",
+        ["train/reward", "train/verifier_pass_rate"],
+      ),
+      stage(
+        "advantage",
+        "Estimate group advantage",
+        "Rewards are centered within each completion group to produce relative advantages.",
+        "Grouped completion rewards",
+        "Relative advantages",
+      ),
+      stage(
+        "update",
+        "Update with KL control",
+        "GRPO improves rewarded completions while measuring drift from the reference policy.",
+        "Completions, log probabilities and relative advantages",
+        "Updated language-model parameters",
+        ["train/loss", "train/kl", "train/entropy", "train/learning_rate"],
+      ),
+      stage(
+        "evaluate",
+        "Evaluate held-out prompts",
+        "The same versioned holdout is scored before and after training without entering the optimizer dataset.",
+        "Updated policy, held-out prompts and exact-answer verifier",
+        "Before/after reward and verifier-pass evidence",
+        ["eval/reward", "eval/verifier_pass_rate"],
+      ),
+      stage(
+        "inspect",
+        "Inspect evidence",
+        "Retained prompt, completion and verifier records make reward behavior auditable.",
+        "Scored completion samples",
+        "Metrics, evaluation report, summary and completion replay",
+        ["system/generated_tokens_upper_bound", "system/tokens_per_second"],
+      ),
+    ],
+  },
   A2C: {
     algorithm: "A2C",
     family: "On-policy actor–critic",

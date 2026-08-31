@@ -25,6 +25,7 @@ export interface TrajectoryStep {
 }
 
 export interface TrajectoryReplay {
+  readonly kind: "environment" | "llm-post-training";
   readonly environment: string;
   readonly evaluationSeed: number;
   readonly trajectory: ReadonlyArray<TrajectoryStep>;
@@ -145,6 +146,10 @@ export function parseTrajectoryReplay(
   options: ParseTrajectoryReplayOptions = {},
 ): TrajectoryReplay {
   const root = requireRecord(value, "Replay");
+  const rawKind = root.kind ?? "environment";
+  if (rawKind !== "environment" && rawKind !== "llm-post-training") {
+    schemaError("Replay.kind must be environment or llm-post-training.");
+  }
   const environment = root.environment;
   if (
     typeof environment !== "string" ||
@@ -187,7 +192,7 @@ export function parseTrajectoryReplay(
     };
   });
 
-  return { environment, evaluationSeed, trajectory };
+  return { kind: rawKind, environment, evaluationSeed, trajectory };
 }
 
 export function parseTrajectoryReplayJson(

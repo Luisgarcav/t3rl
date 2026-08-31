@@ -97,21 +97,27 @@ function ViewerCard({
   children,
   className,
   description,
+  itemLabel = "steps",
   stepCount,
+  title = "Trajectory replay",
 }: {
   readonly children: ReactNode;
   readonly className?: string | undefined;
   readonly description: string;
+  readonly itemLabel?: string | undefined;
   readonly stepCount?: number | undefined;
+  readonly title?: string | undefined;
 }) {
   return (
     <Card className={cn("min-w-0 overflow-hidden", className)}>
       <CardHeader>
-        <CardTitle className="text-base">Trajectory replay</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
         {stepCount !== undefined ? (
           <CardAction>
-            <Badge variant="secondary">{stepCount.toLocaleString()} steps</Badge>
+            <Badge variant="secondary">
+              {stepCount.toLocaleString()} {itemLabel}
+            </Badge>
           </CardAction>
         ) : null}
       </CardHeader>
@@ -263,6 +269,7 @@ function TrajectoryPlayback({
   const [isPlaying, setIsPlaying] = useState(false);
   const lastIndex = replay.trajectory.length - 1;
   const step = replay.trajectory[currentIndex] ?? replay.trajectory[0];
+  const isLlmPostTraining = replay.kind === "llm-post-training";
 
   useEffect(() => {
     if (!isPlaying || currentIndex >= lastIndex) return;
@@ -294,28 +301,41 @@ function TrajectoryPlayback({
   return (
     <ViewerCard
       className={className}
-      description={`${replay.environment} · evaluation seed ${replay.evaluationSeed.toLocaleString()}`}
+      description={`${replay.environment} · ${isLlmPostTraining ? "training" : "evaluation"} seed ${replay.evaluationSeed.toLocaleString()}`}
+      itemLabel={isLlmPostTraining ? "samples" : "steps"}
       stepCount={replay.trajectory.length}
+      title={isLlmPostTraining ? "Completion samples" : "Trajectory replay"}
     >
       <div className="space-y-4">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/12 px-3 py-2">
           <div className="min-w-0">
             <div className="font-mono text-xs font-semibold tabular-nums">
-              Step {step.step.toLocaleString()}
+              {isLlmPostTraining ? "Sample" : "Step"} {step.step.toLocaleString()}
             </div>
             <div className="truncate font-mono text-[10px] text-muted-foreground">
               {runId} · {environmentId}
             </div>
           </div>
-          <Badge variant={terminalBadgeVariant(step)}>{terminalLabel(step)}</Badge>
+          <Badge variant={terminalBadgeVariant(step)}>
+            {isLlmPostTraining ? "Scored" : terminalLabel(step)}
+          </Badge>
         </div>
 
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
-          <ReplayValue label="Observation" value={step.observation} />
+          <ReplayValue
+            label={isLlmPostTraining ? "Prompt and reference" : "Observation"}
+            value={step.observation}
+          />
           <div className="grid grid-cols-2 gap-3 md:grid-cols-1">
-            <ReplayValue compact label="Action" value={step.action} />
+            <ReplayValue
+              compact
+              label={isLlmPostTraining ? "Completion and verifier" : "Action"}
+              value={step.action}
+            />
             <div className="rounded-xl border border-border/70 bg-muted/12 p-3">
-              <div className="text-xs font-medium text-muted-foreground">Reward</div>
+              <div className="text-xs font-medium text-muted-foreground">
+                {isLlmPostTraining ? "Verifier reward" : "Reward"}
+              </div>
               <div className="mt-2 font-mono text-lg font-semibold tabular-nums">
                 {step.reward.toLocaleString(undefined, { maximumFractionDigits: 6 })}
               </div>
@@ -323,14 +343,18 @@ function TrajectoryPlayback({
           </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-3 text-sm">
-          <BooleanFact label="Terminated" value={step.terminated} />
-          <BooleanFact label="Truncated" value={step.truncated} />
-        </dl>
+        {isLlmPostTraining ? null : (
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <BooleanFact label="Terminated" value={step.terminated} />
+            <BooleanFact label="Truncated" value={step.truncated} />
+          </dl>
+        )}
 
         <div className="space-y-3 rounded-xl border border-border/70 p-3">
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-            <span>Frame {currentIndex + 1}</span>
+            <span>
+              {isLlmPostTraining ? "Sample" : "Frame"} {currentIndex + 1}
+            </span>
             <span>{replay.trajectory.length.toLocaleString()} total</span>
           </div>
           <input

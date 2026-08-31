@@ -15,7 +15,7 @@ const T3_CODE_RL_TOOL_INSTRUCTIONS = `
 
 ## t3RL Lab tools
 
-The product-native \`t3-code\` MCP server exposes \`rl_*\` tools for the current thread's project. Use them when the user asks to inspect RL Lab capabilities, runs, manifests, metrics, comparisons, logs, evaluations, or trajectory replays. \`rl_start_run\` and \`rl_cancel_run\` execute or stop training and must follow the current permission mode; use read-only evidence tools first when the request is investigative.
+The product-native \`t3-code\` MCP server exposes \`rl_*\` tools for the current thread's project. Use them when the user asks to inspect RL Lab capabilities, runs, manifests, metrics, comparisons, logs, evaluations, environment trajectories, or LLM prompt/completion verifier replays. \`rl_start_run\` and \`rl_cancel_run\` execute or stop training and must follow the current permission mode; use read-only evidence tools first when the request is investigative.
 `;
 
 /**

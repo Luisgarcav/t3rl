@@ -62,7 +62,7 @@ import {
   formatRlBytes,
   formatRlDuration,
   formatRlState,
-  RL_METRIC_DEFINITIONS,
+  rlMetricDefinitionsForRunner,
   rlStatusVariant,
 } from "./rlPresentation";
 import { TrajectoryViewer } from "./trajectory/TrajectoryViewer";
@@ -752,7 +752,7 @@ function RunDetail({
               <Badge variant="secondary">{metrics.length.toLocaleString()} batches</Badge>
             </div>
             <div className="grid gap-3 @[38rem]/rl-lab:grid-cols-2 @[64rem]/rl-lab:grid-cols-4">
-              {RL_METRIC_DEFINITIONS.map((definition) => (
+              {rlMetricDefinitionsForRunner(manifest?.runnerId).map((definition) => (
                 <RlMetricChart definition={definition} key={definition.key} metrics={metrics} />
               ))}
             </div>
@@ -776,6 +776,7 @@ function RunDetail({
         <RunBehavior
           artifacts={artifacts}
           environmentId={environmentId}
+          llmPostTraining={manifest?.runnerId === "trl"}
           runId={runId}
           terminal={isTerminalRlRunState(summary.state)}
         />
@@ -789,11 +790,13 @@ function RunDetail({
 function RunBehavior({
   artifacts,
   environmentId,
+  llmPostTraining,
   runId,
   terminal,
 }: {
   readonly artifacts: ReadonlyArray<RlArtifactMetadata>;
   readonly environmentId: EnvironmentId;
+  readonly llmPostTraining: boolean;
   readonly runId: RlRunId;
   readonly terminal: boolean;
 }) {
@@ -804,16 +807,22 @@ function RunBehavior({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Trajectory replay</CardTitle>
+        <CardTitle className="text-base">
+          {llmPostTraining ? "Completion samples" : "Trajectory replay"}
+        </CardTitle>
         <CardDescription>
-          Inspect observations, actions, rewards and episode endings.
+          {llmPostTraining
+            ? "Inspect prompts, completions, verifier decisions and rewards."
+            : "Inspect observations, actions, rewards and episode endings."}
         </CardDescription>
       </CardHeader>
       <CardPanel>
         <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
           {terminal
-            ? "This run did not produce a replay artifact."
-            : "The replay appears after the worker completes its final evaluation."}
+            ? "This run did not produce a behavior replay artifact."
+            : llmPostTraining
+              ? "Completion samples appear after the worker finishes training."
+              : "The replay appears after the worker completes its final evaluation."}
         </div>
       </CardPanel>
     </Card>
