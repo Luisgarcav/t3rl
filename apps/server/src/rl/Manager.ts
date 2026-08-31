@@ -222,14 +222,22 @@ const makeManager = Effect.gen(function* () {
 
   /**
    * Holds one pending batch and a single scheduled flush. A burst replaces the
-   * pending value instead of queueing, so an over-eager worker cannot grow the
-   * server's memory.
+   * pending value per metric key instead of queueing, so an over-eager worker
+   * cannot grow the server's memory while adjacent namespaces (for example the
+   * final `train/*` and `eval/*` observations) cannot erase each other.
    */
   const offerMetrics = (runId: string, batch: RlMetricBatch) =>
     Effect.gen(function* () {
       const record = yield* getRecord(runId);
       if (record === null) return;
-      record.pendingBatch = batch;
+      record.pendingBatch =
+        record.pendingBatch === null
+          ? batch
+          : {
+              step: batch.step,
+              wallClockMs: batch.wallClockMs,
+              values: { ...record.pendingBatch.values, ...batch.values },
+            };
       if (record.flushScheduled) return;
       record.flushScheduled = true;
       yield* Effect.forkIn(

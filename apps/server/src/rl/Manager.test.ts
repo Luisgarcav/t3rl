@@ -460,6 +460,57 @@ describe("RlManager", () => {
     }),
   );
 
+  it.effect("coalesces adjacent metric namespaces without dropping either", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+
+          worker.emitStdout(
+            JSON.stringify({
+              type: "metrics",
+              step: 8,
+              wallClockMs: 100,
+              values: { "train/reward": 0.5, "system/num_tokens": 588 },
+            }),
+          );
+          worker.emitStdout(
+            JSON.stringify({
+              type: "metrics",
+              step: 8,
+              wallClockMs: 120,
+              values: { "eval/reward": 0.875, "eval/verifier_pass_rate": 0.875 },
+            }),
+          );
+          yield* settle;
+          yield* TestClock.adjust("1 second");
+          yield* settle;
+
+          const detail = yield* manager.get({ runId });
+          assert.deepStrictEqual(detail.metrics[0], {
+            step: 8,
+            wallClockMs: 120,
+            values: {
+              "train/reward": 0.5,
+              "system/num_tokens": 588,
+              "eval/reward": 0.875,
+              "eval/verifier_pass_rate": 0.875,
+            },
+          });
+        }),
+      );
+    }),
+  );
+
   it.effect("replays a snapshot then live events to a late subscriber", () =>
     Effect.gen(function* () {
       const worker = new FakeWorkerProcess();
