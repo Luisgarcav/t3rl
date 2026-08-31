@@ -56,8 +56,9 @@ An optional single-GPU preview adds executable LLM post-training experiments:
 The `v1` dataset sits near the base model's ceiling, where a before/after comparison cannot resolve
 an effect smaller than a single sampled generation. The `v2` dataset is drawn from a difficulty tier
 a calibration run measured at a 0.427 base pass rate and evaluates a 64-row holdout four times, so
-the measurement has headroom in both directions. Both are kept: a run's dataset SHA-256 records
-which one produced it.
+the measurement has headroom in both directions. Across 20 seeds of the untrained policy, that moved
+the noise floor of a single evaluation from a standard deviation of 0.111 to 0.021, and no seed sat
+at the ceiling. Both datasets are kept: a run's dataset SHA-256 records which one produced it.
 
 The same task also runs through Axolotl. Because Axolotl pins exact dependency versions that
 conflict with the native TRL runner, it lives in its own environment named by
