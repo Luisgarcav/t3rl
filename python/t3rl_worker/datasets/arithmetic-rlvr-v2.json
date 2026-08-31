@@ -1,0 +1,1282 @@
+[
+  {
+    "prompt": "What is 36 × 35?",
+    "answer": "1260"
+  },
+  {
+    "prompt": "What is 76 × 48?",
+    "answer": "3648"
+  },
+  {
+    "prompt": "What is 69 × 97?",
+    "answer": "6693"
+  },
+  {
+    "prompt": "What is 21 × 67?",
+    "answer": "1407"
+  },
+  {
+    "prompt": "What is 82 × 98?",
+    "answer": "8036"
+  },
+  {
+    "prompt": "What is 83 × 63?",
+    "answer": "5229"
+  },
+  {
+    "prompt": "What is 92 × 21?",
+    "answer": "1932"
+  },
+  {
+    "prompt": "What is 57 × 98?",
+    "answer": "5586"
+  },
+  {
+    "prompt": "What is 51 × 75?",
+    "answer": "3825"
+  },
+  {
+    "prompt": "What is 40 × 64?",
+    "answer": "2560"
+  },
+  {
+    "prompt": "What is 44 × 91?",
+    "answer": "4004"
+  },
+  {
+    "prompt": "What is 76 × 30?",
+    "answer": "2280"
+  },
+  {
+    "prompt": "What is 45 × 83?",
+    "answer": "3735"
+  },
+  {
+    "prompt": "What is 59 × 17?",
+    "answer": "1003"
+  },
+  {
+    "prompt": "What is 27 × 23?",
+    "answer": "621"
+  },
+  {
+    "prompt": "What is 89 × 39?",
+    "answer": "3471"
+  },
+  {
+    "prompt": "What is 14 × 36?",
+    "answer": "504"
+  },
+  {
+    "prompt": "What is 85 × 94?",
+    "answer": "7990"
+  },
+  {
+    "prompt": "What is 53 × 25?",
+    "answer": "1325"
+  },
+  {
+    "prompt": "What is 69 × 62?",
+    "answer": "4278"
+  },
+  {
+    "prompt": "What is 23 × 49?",
+    "answer": "1127"
+  },
+  {
+    "prompt": "What is 59 × 79?",
+    "answer": "4661"
+  },
+  {
+    "prompt": "What is 54 × 67?",
+    "answer": "3618"
+  },
+  {
+    "prompt": "What is 79 × 37?",
+    "answer": "2923"
+  },
+  {
+    "prompt": "What is 72 × 65?",
+    "answer": "4680"
+  },
+  {
+    "prompt": "What is 52 × 51?",
+    "answer": "2652"
+  },
+  {
+    "prompt": "What is 41 × 93?",
+    "answer": "3813"
+  },
+  {
+    "prompt": "What is 90 × 88?",
+    "answer": "7920"
+  },
+  {
+    "prompt": "What is 68 × 45?",
+    "answer": "3060"
+  },
+  {
+    "prompt": "What is 21 × 94?",
+    "answer": "1974"
+  },
+  {
+    "prompt": "What is 28 × 46?",
+    "answer": "1288"
+  },
+  {
+    "prompt": "What is 55 × 52?",
+    "answer": "2860"
+  },
+  {
+    "prompt": "What is 21 × 14?",
+    "answer": "294"
+  },
+  {
+    "prompt": "What is 53 × 61?",
+    "answer": "3233"
+  },
+  {
+    "prompt": "What is 76 × 76?",
+    "answer": "5776"
+  },
+  {
+    "prompt": "What is 26 × 95?",
+    "answer": "2470"
+  },
+  {
+    "prompt": "What is 39 × 34?",
+    "answer": "1326"
+  },
+  {
+    "prompt": "What is 68 × 81?",
+    "answer": "5508"
+  },
+  {
+    "prompt": "What is 95 × 16?",
+    "answer": "1520"
+  },
+  {
+    "prompt": "What is 86 × 50?",
+    "answer": "4300"
+  },
+  {
+    "prompt": "What is 77 × 64?",
+    "answer": "4928"
+  },
+  {
+    "prompt": "What is 34 × 58?",
+    "answer": "1972"
+  },
+  {
+    "prompt": "What is 69 × 88?",
+    "answer": "6072"
+  },
+  {
+    "prompt": "What is 19 × 53?",
+    "answer": "1007"
+  },
+  {
+    "prompt": "What is 25 × 65?",
+    "answer": "1625"
+  },
+  {
+    "prompt": "What is 94 × 89?",
+    "answer": "8366"
+  },
+  {
+    "prompt": "What is 79 × 12?",
+    "answer": "948"
+  },
+  {
+    "prompt": "What is 32 × 23?",
+    "answer": "736"
+  },
+  {
+    "prompt": "What is 77 × 95?",
+    "answer": "7315"
+  },
+  {
+    "prompt": "What is 88 × 13?",
+    "answer": "1144"
+  },
+  {
+    "prompt": "What is 61 × 14?",
+    "answer": "854"
+  },
+  {
+    "prompt": "What is 18 × 26?",
+    "answer": "468"
+  },
+  {
+    "prompt": "What is 39 × 80?",
+    "answer": "3120"
+  },
+  {
+    "prompt": "What is 72 × 64?",
+    "answer": "4608"
+  },
+  {
+    "prompt": "What is 71 × 44?",
+    "answer": "3124"
+  },
+  {
+    "prompt": "What is 16 × 88?",
+    "answer": "1408"
+  },
+  {
+    "prompt": "What is 76 × 54?",
+    "answer": "4104"
+  },
+  {
+    "prompt": "What is 83 × 21?",
+    "answer": "1743"
+  },
+  {
+    "prompt": "What is 70 × 39?",
+    "answer": "2730"
+  },
+  {
+    "prompt": "What is 25 × 73?",
+    "answer": "1825"
+  },
+  {
+    "prompt": "What is 84 × 77?",
+    "answer": "6468"
+  },
+  {
+    "prompt": "What is 50 × 19?",
+    "answer": "950"
+  },
+  {
+    "prompt": "What is 87 × 35?",
+    "answer": "3045"
+  },
+  {
+    "prompt": "What is 18 × 57?",
+    "answer": "1026"
+  },
+  {
+    "prompt": "What is 21 × 52?",
+    "answer": "1092"
+  },
+  {
+    "prompt": "What is 30 × 20?",
+    "answer": "600"
+  },
+  {
+    "prompt": "What is 35 × 84?",
+    "answer": "2940"
+  },
+  {
+    "prompt": "What is 72 × 94?",
+    "answer": "6768"
+  },
+  {
+    "prompt": "What is 80 × 86?",
+    "answer": "6880"
+  },
+  {
+    "prompt": "What is 66 × 91?",
+    "answer": "6006"
+  },
+  {
+    "prompt": "What is 48 × 54?",
+    "answer": "2592"
+  },
+  {
+    "prompt": "What is 47 × 75?",
+    "answer": "3525"
+  },
+  {
+    "prompt": "What is 67 × 67?",
+    "answer": "4489"
+  },
+  {
+    "prompt": "What is 68 × 95?",
+    "answer": "6460"
+  },
+  {
+    "prompt": "What is 59 × 62?",
+    "answer": "3658"
+  },
+  {
+    "prompt": "What is 40 × 47?",
+    "answer": "1880"
+  },
+  {
+    "prompt": "What is 62 × 57?",
+    "answer": "3534"
+  },
+  {
+    "prompt": "What is 86 × 57?",
+    "answer": "4902"
+  },
+  {
+    "prompt": "What is 30 × 72?",
+    "answer": "2160"
+  },
+  {
+    "prompt": "What is 71 × 60?",
+    "answer": "4260"
+  },
+  {
+    "prompt": "What is 22 × 12?",
+    "answer": "264"
+  },
+  {
+    "prompt": "What is 72 × 48?",
+    "answer": "3456"
+  },
+  {
+    "prompt": "What is 14 × 71?",
+    "answer": "994"
+  },
+  {
+    "prompt": "What is 67 × 21?",
+    "answer": "1407"
+  },
+  {
+    "prompt": "What is 88 × 77?",
+    "answer": "6776"
+  },
+  {
+    "prompt": "What is 46 × 50?",
+    "answer": "2300"
+  },
+  {
+    "prompt": "What is 18 × 48?",
+    "answer": "864"
+  },
+  {
+    "prompt": "What is 92 × 32?",
+    "answer": "2944"
+  },
+  {
+    "prompt": "What is 43 × 76?",
+    "answer": "3268"
+  },
+  {
+    "prompt": "What is 91 × 11?",
+    "answer": "1001"
+  },
+  {
+    "prompt": "What is 23 × 25?",
+    "answer": "575"
+  },
+  {
+    "prompt": "What is 83 × 17?",
+    "answer": "1411"
+  },
+  {
+    "prompt": "What is 59 × 30?",
+    "answer": "1770"
+  },
+  {
+    "prompt": "What is 74 × 60?",
+    "answer": "4440"
+  },
+  {
+    "prompt": "What is 25 × 89?",
+    "answer": "2225"
+  },
+  {
+    "prompt": "What is 30 × 63?",
+    "answer": "1890"
+  },
+  {
+    "prompt": "What is 85 × 38?",
+    "answer": "3230"
+  },
+  {
+    "prompt": "What is 55 × 38?",
+    "answer": "2090"
+  },
+  {
+    "prompt": "What is 89 × 74?",
+    "answer": "6586"
+  },
+  {
+    "prompt": "What is 84 × 46?",
+    "answer": "3864"
+  },
+  {
+    "prompt": "What is 54 × 70?",
+    "answer": "3780"
+  },
+  {
+    "prompt": "What is 30 × 88?",
+    "answer": "2640"
+  },
+  {
+    "prompt": "What is 65 × 60?",
+    "answer": "3900"
+  },
+  {
+    "prompt": "What is 48 × 56?",
+    "answer": "2688"
+  },
+  {
+    "prompt": "What is 20 × 92?",
+    "answer": "1840"
+  },
+  {
+    "prompt": "What is 78 × 35?",
+    "answer": "2730"
+  },
+  {
+    "prompt": "What is 52 × 26?",
+    "answer": "1352"
+  },
+  {
+    "prompt": "What is 36 × 20?",
+    "answer": "720"
+  },
+  {
+    "prompt": "What is 42 × 78?",
+    "answer": "3276"
+  },
+  {
+    "prompt": "What is 69 × 65?",
+    "answer": "4485"
+  },
+  {
+    "prompt": "What is 29 × 22?",
+    "answer": "638"
+  },
+  {
+    "prompt": "What is 78 × 27?",
+    "answer": "2106"
+  },
+  {
+    "prompt": "What is 46 × 39?",
+    "answer": "1794"
+  },
+  {
+    "prompt": "What is 48 × 72?",
+    "answer": "3456"
+  },
+  {
+    "prompt": "What is 91 × 40?",
+    "answer": "3640"
+  },
+  {
+    "prompt": "What is 39 × 83?",
+    "answer": "3237"
+  },
+  {
+    "prompt": "What is 58 × 57?",
+    "answer": "3306"
+  },
+  {
+    "prompt": "What is 30 × 60?",
+    "answer": "1800"
+  },
+  {
+    "prompt": "What is 59 × 25?",
+    "answer": "1475"
+  },
+  {
+    "prompt": "What is 52 × 86?",
+    "answer": "4472"
+  },
+  {
+    "prompt": "What is 62 × 95?",
+    "answer": "5890"
+  },
+  {
+    "prompt": "What is 17 × 82?",
+    "answer": "1394"
+  },
+  {
+    "prompt": "What is 91 × 50?",
+    "answer": "4550"
+  },
+  {
+    "prompt": "What is 19 × 36?",
+    "answer": "684"
+  },
+  {
+    "prompt": "What is 11 × 18?",
+    "answer": "198"
+  },
+  {
+    "prompt": "What is 11 × 61?",
+    "answer": "671"
+  },
+  {
+    "prompt": "What is 77 × 56?",
+    "answer": "4312"
+  },
+  {
+    "prompt": "What is 52 × 42?",
+    "answer": "2184"
+  },
+  {
+    "prompt": "What is 98 × 65?",
+    "answer": "6370"
+  },
+  {
+    "prompt": "What is 19 × 46?",
+    "answer": "874"
+  },
+  {
+    "prompt": "What is 24 × 25?",
+    "answer": "600"
+  },
+  {
+    "prompt": "What is 71 × 32?",
+    "answer": "2272"
+  },
+  {
+    "prompt": "What is 58 × 38?",
+    "answer": "2204"
+  },
+  {
+    "prompt": "What is 64 × 46?",
+    "answer": "2944"
+  },
+  {
+    "prompt": "What is 32 × 24?",
+    "answer": "768"
+  },
+  {
+    "prompt": "What is 15 × 43?",
+    "answer": "645"
+  },
+  {
+    "prompt": "What is 14 × 95?",
+    "answer": "1330"
+  },
+  {
+    "prompt": "What is 32 × 28?",
+    "answer": "896"
+  },
+  {
+    "prompt": "What is 67 × 49?",
+    "answer": "3283"
+  },
+  {
+    "prompt": "What is 58 × 80?",
+    "answer": "4640"
+  },
+  {
+    "prompt": "What is 41 × 12?",
+    "answer": "492"
+  },
+  {
+    "prompt": "What is 30 × 62?",
+    "answer": "1860"
+  },
+  {
+    "prompt": "What is 82 × 63?",
+    "answer": "5166"
+  },
+  {
+    "prompt": "What is 68 × 75?",
+    "answer": "5100"
+  },
+  {
+    "prompt": "What is 95 × 85?",
+    "answer": "8075"
+  },
+  {
+    "prompt": "What is 57 × 19?",
+    "answer": "1083"
+  },
+  {
+    "prompt": "What is 83 × 72?",
+    "answer": "5976"
+  },
+  {
+    "prompt": "What is 40 × 26?",
+    "answer": "1040"
+  },
+  {
+    "prompt": "What is 61 × 29?",
+    "answer": "1769"
+  },
+  {
+    "prompt": "What is 45 × 67?",
+    "answer": "3015"
+  },
+  {
+    "prompt": "What is 94 × 53?",
+    "answer": "4982"
+  },
+  {
+    "prompt": "What is 91 × 29?",
+    "answer": "2639"
+  },
+  {
+    "prompt": "What is 14 × 93?",
+    "answer": "1302"
+  },
+  {
+    "prompt": "What is 17 × 59?",
+    "answer": "1003"
+  },
+  {
+    "prompt": "What is 82 × 37?",
+    "answer": "3034"
+  },
+  {
+    "prompt": "What is 49 × 60?",
+    "answer": "2940"
+  },
+  {
+    "prompt": "What is 73 × 29?",
+    "answer": "2117"
+  },
+  {
+    "prompt": "What is 12 × 50?",
+    "answer": "600"
+  },
+  {
+    "prompt": "What is 44 × 54?",
+    "answer": "2376"
+  },
+  {
+    "prompt": "What is 41 × 81?",
+    "answer": "3321"
+  },
+  {
+    "prompt": "What is 38 × 91?",
+    "answer": "3458"
+  },
+  {
+    "prompt": "What is 61 × 25?",
+    "answer": "1525"
+  },
+  {
+    "prompt": "What is 31 × 71?",
+    "answer": "2201"
+  },
+  {
+    "prompt": "What is 94 × 26?",
+    "answer": "2444"
+  },
+  {
+    "prompt": "What is 87 × 15?",
+    "answer": "1305"
+  },
+  {
+    "prompt": "What is 96 × 19?",
+    "answer": "1824"
+  },
+  {
+    "prompt": "What is 31 × 86?",
+    "answer": "2666"
+  },
+  {
+    "prompt": "What is 94 × 64?",
+    "answer": "6016"
+  },
+  {
+    "prompt": "What is 32 × 55?",
+    "answer": "1760"
+  },
+  {
+    "prompt": "What is 66 × 71?",
+    "answer": "4686"
+  },
+  {
+    "prompt": "What is 40 × 16?",
+    "answer": "640"
+  },
+  {
+    "prompt": "What is 11 × 30?",
+    "answer": "330"
+  },
+  {
+    "prompt": "What is 92 × 89?",
+    "answer": "8188"
+  },
+  {
+    "prompt": "What is 26 × 54?",
+    "answer": "1404"
+  },
+  {
+    "prompt": "What is 99 × 16?",
+    "answer": "1584"
+  },
+  {
+    "prompt": "What is 37 × 46?",
+    "answer": "1702"
+  },
+  {
+    "prompt": "What is 53 × 53?",
+    "answer": "2809"
+  },
+  {
+    "prompt": "What is 29 × 63?",
+    "answer": "1827"
+  },
+  {
+    "prompt": "What is 21 × 78?",
+    "answer": "1638"
+  },
+  {
+    "prompt": "What is 48 × 16?",
+    "answer": "768"
+  },
+  {
+    "prompt": "What is 57 × 42?",
+    "answer": "2394"
+  },
+  {
+    "prompt": "What is 76 × 65?",
+    "answer": "4940"
+  },
+  {
+    "prompt": "What is 40 × 41?",
+    "answer": "1640"
+  },
+  {
+    "prompt": "What is 49 × 87?",
+    "answer": "4263"
+  },
+  {
+    "prompt": "What is 41 × 37?",
+    "answer": "1517"
+  },
+  {
+    "prompt": "What is 49 × 56?",
+    "answer": "2744"
+  },
+  {
+    "prompt": "What is 69 × 69?",
+    "answer": "4761"
+  },
+  {
+    "prompt": "What is 12 × 87?",
+    "answer": "1044"
+  },
+  {
+    "prompt": "What is 93 × 66?",
+    "answer": "6138"
+  },
+  {
+    "prompt": "What is 77 × 32?",
+    "answer": "2464"
+  },
+  {
+    "prompt": "What is 67 × 68?",
+    "answer": "4556"
+  },
+  {
+    "prompt": "What is 51 × 65?",
+    "answer": "3315"
+  },
+  {
+    "prompt": "What is 61 × 68?",
+    "answer": "4148"
+  },
+  {
+    "prompt": "What is 24 × 32?",
+    "answer": "768"
+  },
+  {
+    "prompt": "What is 72 × 91?",
+    "answer": "6552"
+  },
+  {
+    "prompt": "What is 94 × 76?",
+    "answer": "7144"
+  },
+  {
+    "prompt": "What is 82 × 67?",
+    "answer": "5494"
+  },
+  {
+    "prompt": "What is 51 × 53?",
+    "answer": "2703"
+  },
+  {
+    "prompt": "What is 91 × 60?",
+    "answer": "5460"
+  },
+  {
+    "prompt": "What is 35 × 44?",
+    "answer": "1540"
+  },
+  {
+    "prompt": "What is 20 × 94?",
+    "answer": "1880"
+  },
+  {
+    "prompt": "What is 68 × 38?",
+    "answer": "2584"
+  },
+  {
+    "prompt": "What is 82 × 88?",
+    "answer": "7216"
+  },
+  {
+    "prompt": "What is 54 × 43?",
+    "answer": "2322"
+  },
+  {
+    "prompt": "What is 59 × 53?",
+    "answer": "3127"
+  },
+  {
+    "prompt": "What is 62 × 33?",
+    "answer": "2046"
+  },
+  {
+    "prompt": "What is 21 × 98?",
+    "answer": "2058"
+  },
+  {
+    "prompt": "What is 11 × 54?",
+    "answer": "594"
+  },
+  {
+    "prompt": "What is 90 × 99?",
+    "answer": "8910"
+  },
+  {
+    "prompt": "What is 86 × 39?",
+    "answer": "3354"
+  },
+  {
+    "prompt": "What is 11 × 32?",
+    "answer": "352"
+  },
+  {
+    "prompt": "What is 51 × 17?",
+    "answer": "867"
+  },
+  {
+    "prompt": "What is 27 × 91?",
+    "answer": "2457"
+  },
+  {
+    "prompt": "What is 92 × 40?",
+    "answer": "3680"
+  },
+  {
+    "prompt": "What is 96 × 68?",
+    "answer": "6528"
+  },
+  {
+    "prompt": "What is 71 × 75?",
+    "answer": "5325"
+  },
+  {
+    "prompt": "What is 78 × 70?",
+    "answer": "5460"
+  },
+  {
+    "prompt": "What is 59 × 13?",
+    "answer": "767"
+  },
+  {
+    "prompt": "What is 41 × 22?",
+    "answer": "902"
+  },
+  {
+    "prompt": "What is 67 × 43?",
+    "answer": "2881"
+  },
+  {
+    "prompt": "What is 37 × 87?",
+    "answer": "3219"
+  },
+  {
+    "prompt": "What is 46 × 19?",
+    "answer": "874"
+  },
+  {
+    "prompt": "What is 77 × 85?",
+    "answer": "6545"
+  },
+  {
+    "prompt": "What is 30 × 69?",
+    "answer": "2070"
+  },
+  {
+    "prompt": "What is 50 × 39?",
+    "answer": "1950"
+  },
+  {
+    "prompt": "What is 13 × 57?",
+    "answer": "741"
+  },
+  {
+    "prompt": "What is 65 × 27?",
+    "answer": "1755"
+  },
+  {
+    "prompt": "What is 95 × 90?",
+    "answer": "8550"
+  },
+  {
+    "prompt": "What is 40 × 11?",
+    "answer": "440"
+  },
+  {
+    "prompt": "What is 18 × 68?",
+    "answer": "1224"
+  },
+  {
+    "prompt": "What is 85 × 81?",
+    "answer": "6885"
+  },
+  {
+    "prompt": "What is 86 × 63?",
+    "answer": "5418"
+  },
+  {
+    "prompt": "What is 26 × 42?",
+    "answer": "1092"
+  },
+  {
+    "prompt": "What is 94 × 49?",
+    "answer": "4606"
+  },
+  {
+    "prompt": "What is 50 × 45?",
+    "answer": "2250"
+  },
+  {
+    "prompt": "What is 74 × 29?",
+    "answer": "2146"
+  },
+  {
+    "prompt": "What is 35 × 53?",
+    "answer": "1855"
+  },
+  {
+    "prompt": "What is 23 × 78?",
+    "answer": "1794"
+  },
+  {
+    "prompt": "What is 35 × 40?",
+    "answer": "1400"
+  },
+  {
+    "prompt": "What is 71 × 37?",
+    "answer": "2627"
+  },
+  {
+    "prompt": "What is 28 × 56?",
+    "answer": "1568"
+  },
+  {
+    "prompt": "What is 49 × 68?",
+    "answer": "3332"
+  },
+  {
+    "prompt": "What is 76 × 59?",
+    "answer": "4484"
+  },
+  {
+    "prompt": "What is 82 × 96?",
+    "answer": "7872"
+  },
+  {
+    "prompt": "What is 32 × 11?",
+    "answer": "352"
+  },
+  {
+    "prompt": "What is 58 × 18?",
+    "answer": "1044"
+  },
+  {
+    "prompt": "What is 95 × 63?",
+    "answer": "5985"
+  },
+  {
+    "prompt": "What is 38 × 77?",
+    "answer": "2926"
+  },
+  {
+    "prompt": "What is 75 × 15?",
+    "answer": "1125"
+  },
+  {
+    "prompt": "What is 84 × 13?",
+    "answer": "1092"
+  },
+  {
+    "prompt": "What is 31 × 51?",
+    "answer": "1581"
+  },
+  {
+    "prompt": "What is 42 × 57?",
+    "answer": "2394"
+  },
+  {
+    "prompt": "What is 57 × 93?",
+    "answer": "5301"
+  },
+  {
+    "prompt": "What is 78 × 46?",
+    "answer": "3588"
+  },
+  {
+    "prompt": "What is 19 × 51?",
+    "answer": "969"
+  },
+  {
+    "prompt": "What is 58 × 85?",
+    "answer": "4930"
+  },
+  {
+    "prompt": "What is 56 × 27?",
+    "answer": "1512"
+  },
+  {
+    "prompt": "What is 53 × 19?",
+    "answer": "1007"
+  },
+  {
+    "prompt": "What is 48 × 15?",
+    "answer": "720"
+  },
+  {
+    "prompt": "What is 28 × 71?",
+    "answer": "1988"
+  },
+  {
+    "prompt": "What is 77 × 72?",
+    "answer": "5544"
+  },
+  {
+    "prompt": "What is 16 × 90?",
+    "answer": "1440"
+  },
+  {
+    "prompt": "What is 53 × 16?",
+    "answer": "848"
+  },
+  {
+    "prompt": "What is 68 × 35?",
+    "answer": "2380"
+  },
+  {
+    "prompt": "What is 32 × 34?",
+    "answer": "1088"
+  },
+  {
+    "prompt": "What is 52 × 95?",
+    "answer": "4940"
+  },
+  {
+    "prompt": "What is 44 × 43?",
+    "answer": "1892"
+  },
+  {
+    "prompt": "What is 65 × 58?",
+    "answer": "3770"
+  },
+  {
+    "prompt": "What is 82 × 26?",
+    "answer": "2132"
+  },
+  {
+    "prompt": "What is 23 × 48?",
+    "answer": "1104"
+  },
+  {
+    "prompt": "What is 64 × 67?",
+    "answer": "4288"
+  },
+  {
+    "prompt": "What is 63 × 99?",
+    "answer": "6237"
+  },
+  {
+    "prompt": "What is 73 × 47?",
+    "answer": "3431"
+  },
+  {
+    "prompt": "What is 37 × 49?",
+    "answer": "1813"
+  },
+  {
+    "prompt": "What is 86 × 16?",
+    "answer": "1376"
+  },
+  {
+    "prompt": "What is 25 × 12?",
+    "answer": "300"
+  },
+  {
+    "prompt": "What is 73 × 36?",
+    "answer": "2628"
+  },
+  {
+    "prompt": "What is 11 × 29?",
+    "answer": "319"
+  },
+  {
+    "prompt": "What is 60 × 82?",
+    "answer": "4920"
+  },
+  {
+    "prompt": "What is 81 × 44?",
+    "answer": "3564"
+  },
+  {
+    "prompt": "What is 74 × 58?",
+    "answer": "4292"
+  },
+  {
+    "prompt": "What is 88 × 15?",
+    "answer": "1320"
+  },
+  {
+    "prompt": "What is 94 × 59?",
+    "answer": "5546"
+  },
+  {
+    "prompt": "What is 52 × 57?",
+    "answer": "2964"
+  },
+  {
+    "prompt": "What is 40 × 39?",
+    "answer": "1560"
+  },
+  {
+    "prompt": "What is 59 × 72?",
+    "answer": "4248"
+  },
+  {
+    "prompt": "What is 88 × 93?",
+    "answer": "8184"
+  },
+  {
+    "prompt": "What is 39 × 59?",
+    "answer": "2301"
+  },
+  {
+    "prompt": "What is 80 × 73?",
+    "answer": "5840"
+  },
+  {
+    "prompt": "What is 36 × 14?",
+    "answer": "504"
+  },
+  {
+    "prompt": "What is 96 × 28?",
+    "answer": "2688"
+  },
+  {
+    "prompt": "What is 23 × 81?",
+    "answer": "1863"
+  },
+  {
+    "prompt": "What is 49 × 84?",
+    "answer": "4116"
+  },
+  {
+    "prompt": "What is 18 × 43?",
+    "answer": "774"
+  },
+  {
+    "prompt": "What is 28 × 98?",
+    "answer": "2744"
+  },
+  {
+    "prompt": "What is 29 × 47?",
+    "answer": "1363"
+  },
+  {
+    "prompt": "What is 33 × 88?",
+    "answer": "2904"
+  },
+  {
+    "prompt": "What is 70 × 38?",
+    "answer": "2660"
+  },
+  {
+    "prompt": "What is 79 × 93?",
+    "answer": "7347"
+  },
+  {
+    "prompt": "What is 77 × 74?",
+    "answer": "5698"
+  },
+  {
+    "prompt": "What is 98 × 31?",
+    "answer": "3038"
+  },
+  {
+    "prompt": "What is 71 × 72?",
+    "answer": "5112"
+  },
+  {
+    "prompt": "What is 74 × 65?",
+    "answer": "4810"
+  },
+  {
+    "prompt": "What is 66 × 31?",
+    "answer": "2046"
+  },
+  {
+    "prompt": "What is 73 × 56?",
+    "answer": "4088"
+  },
+  {
+    "prompt": "What is 91 × 16?",
+    "answer": "1456"
+  },
+  {
+    "prompt": "What is 77 × 49?",
+    "answer": "3773"
+  },
+  {
+    "prompt": "What is 78 × 55?",
+    "answer": "4290"
+  },
+  {
+    "prompt": "What is 59 × 47?",
+    "answer": "2773"
+  },
+  {
+    "prompt": "What is 51 × 43?",
+    "answer": "2193"
+  },
+  {
+    "prompt": "What is 69 × 13?",
+    "answer": "897"
+  },
+  {
+    "prompt": "What is 67 × 72?",
+    "answer": "4824"
+  },
+  {
+    "prompt": "What is 85 × 59?",
+    "answer": "5015"
+  },
+  {
+    "prompt": "What is 71 × 20?",
+    "answer": "1420"
+  },
+  {
+    "prompt": "What is 48 × 34?",
+    "answer": "1632"
+  },
+  {
+    "prompt": "What is 11 × 25?",
+    "answer": "275"
+  },
+  {
+    "prompt": "What is 35 × 11?",
+    "answer": "385"
+  },
+  {
+    "prompt": "What is 76 × 21?",
+    "answer": "1596"
+  },
+  {
+    "prompt": "What is 76 × 39?",
+    "answer": "2964"
+  },
+  {
+    "prompt": "What is 52 × 25?",
+    "answer": "1300"
+  }
+]

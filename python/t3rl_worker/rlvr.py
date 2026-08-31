@@ -35,9 +35,18 @@ SUPPORTED_MODEL_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 
 SUPPORTED_DATASET = "arithmetic-rlvr-v1"
 
+# v2 raises evaluation resolution. Its rows come from the difficulty tier a
+# calibration run measured at 0.427 base pass rate, so a holdout can move in
+# either direction instead of sitting against the ceiling v1 sits against.
+SUPPORTED_DATASET_V2 = "arithmetic-rlvr-v2"
+
+
+SUPPORTED_DATASETS = frozenset({SUPPORTED_DATASET, SUPPORTED_DATASET_V2})
+
 
 DATASET_PATHS = {
-    SUPPORTED_DATASET: Path(__file__).parent / "datasets" / "arithmetic-rlvr-v1.json"
+    SUPPORTED_DATASET: Path(__file__).parent / "datasets" / "arithmetic-rlvr-v1.json",
+    SUPPORTED_DATASET_V2: Path(__file__).parent / "datasets" / "arithmetic-rlvr-v2.json",
 }
 
 

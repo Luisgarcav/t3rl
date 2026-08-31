@@ -34,10 +34,18 @@ that served it, so a result always says which environment produced it.
 Choose a catalog experiment, enter an integer seed, and start the run. The bundled
 Stable-Baselines3 catalog covers PPO, A2C, and DQN on `CartPole-v1`, plus SAC, TD3, and DDPG on
 continuous-control `Pendulum-v1`. The optional TRL catalog includes a bounded single-GPU GRPO/RLVR
-sample using `Qwen/Qwen2.5-0.5B-Instruct`, a versioned arithmetic dataset, and an exact-integer
-verifier. It keeps the last four versioned rows out of the optimizer dataset, evaluates that holdout
-before and after training, and records the comparison as metrics and an evaluation artifact. A new
-request creates a new run, while transport retries are deduplicated by the server.
+samples using `Qwen/Qwen2.5-0.5B-Instruct`, a versioned arithmetic dataset, and an exact-integer
+verifier, and the same task runs through Axolotl as well. Each keeps a versioned holdout out of the
+optimizer dataset, evaluates it before and after training, and records the comparison as metrics and
+an evaluation artifact. A new request creates a new run, while transport retries are deduplicated by
+the server.
+
+Two dataset versions ship. The `v1` samples evaluate four held-out rows twice, which the base model
+already answers almost perfectly, so the before/after comparison there cannot resolve a change
+smaller than one sampled generation. The `v2` samples use a harder dataset and evaluate 64 held-out
+rows four times, giving a measurement with room to move in either direction. Prefer `v2` when the
+question is whether training changed anything; the run's recorded dataset checksum tells you which
+one produced a result.
 
 ## Monitor and reopen runs
 

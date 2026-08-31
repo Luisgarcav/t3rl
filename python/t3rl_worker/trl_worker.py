@@ -31,6 +31,7 @@ from rlvr import (
     EvidenceLedger,
     PROTOCOL_VERSION,
     SUPPORTED_DATASET,
+    SUPPORTED_DATASETS,
     SUPPORTED_MODEL,
     SUPPORTED_MODEL_REVISION,
     _boolean,
@@ -111,10 +112,11 @@ def resolve_config(raw: Any) -> dict[str, Any]:
         "launcher": "direct",
         "distributedStrategy": "single-process",
         "modelId": SUPPORTED_MODEL,
-        "datasetId": SUPPORTED_DATASET,
     }.items():
         if config[key] != expected:
             raise ValueError(f"{key} must be {expected}")
+    if config["datasetId"] not in SUPPORTED_DATASETS:
+        raise ValueError(f"datasetId must be one of {sorted(SUPPORTED_DATASETS)}")
 
     config["modelRevision"] = _string("modelRevision", config["modelRevision"], 128)
     config["systemPrompt"] = _string("systemPrompt", config["systemPrompt"], 1024)

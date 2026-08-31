@@ -27,6 +27,7 @@ from rlvr import (
     EvidenceLedger,
     PROTOCOL_VERSION,
     SUPPORTED_DATASET,
+    SUPPORTED_DATASETS,
     SUPPORTED_MODEL,
     SUPPORTED_MODEL_REVISION,
     _boolean,
@@ -99,10 +100,11 @@ def resolve_config(raw: Any) -> dict[str, Any]:
         "launcher": "direct",
         "distributedStrategy": "single-process",
         "modelId": SUPPORTED_MODEL,
-        "datasetId": SUPPORTED_DATASET,
     }.items():
         if config[key] != expected:
             raise ValueError(f"{key} must be {expected}")
+    if config["datasetId"] not in SUPPORTED_DATASETS:
+        raise ValueError(f"datasetId must be one of {sorted(SUPPORTED_DATASETS)}")
 
     config["modelRevision"] = _string("modelRevision", config["modelRevision"], 128)
     config["systemPrompt"] = _string("systemPrompt", config["systemPrompt"], 1024)
@@ -139,6 +141,16 @@ def resolve_config(raw: Any) -> dict[str, Any]:
         # defaults `use_vllm` to false and guards every vLLM call behind it.
         # The sidecar is a later, separately supervised increment.
         raise ValueError("useVllm is not supported by the first Axolotl adapter")
+
+    if config["evaluationNumGenerations"] != config["numGenerations"]:
+        # Axolotl's schema exposes only `num_generations`. TRL's separate
+        # `num_generations_eval` has no surface here, so a differing value would
+        # be silently evaluated at the training count and the manifest would
+        # claim a sample size the run never produced.
+        raise ValueError(
+            "the Axolotl adapter cannot evaluate at a different generation count "
+            "than it trains at; set evaluationNumGenerations = numGenerations"
+        )
 
     effective_batch = (
         config["perDeviceTrainBatchSize"] * config["gradientAccumulationSteps"]
@@ -213,6 +225,9 @@ def build_axolotl_config(
         "remove_unused_columns": False,
         "learning_rate": config["learningRate"],
         "micro_batch_size": config["perDeviceTrainBatchSize"],
+        # Without this the backend picks its own evaluation batch size and the
+        # manifest would declare a bound the run does not honour.
+        "eval_batch_size": config["evaluationBatchSize"],
         "gradient_accumulation_steps": config["gradientAccumulationSteps"],
         "sequence_len": config["maxPromptLength"] + config["maxCompletionLength"],
         "gradient_checkpointing": config["gradientCheckpointing"],

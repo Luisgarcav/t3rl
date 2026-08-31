@@ -177,5 +177,18 @@ class RlvrUnitTest(unittest.TestCase):
         self.assertEqual(ledger.summarize("evaluation-after")["verifierPassRate"], 0.0)
 
 
+    def test_v2_dataset_leaves_a_holdout_large_enough_to_measure(self) -> None:
+        records, sha = rlvr.load_builtin_dataset("arithmetic-rlvr-v2")
+        self.assertEqual(len(records), 320)
+        self.assertEqual(len(sha), 64)
+        self.assertEqual(len({row["prompt"] for row in records}), 320)
+
+        training, holdout = rlvr.split_dataset(records, 64)
+        self.assertEqual((len(training), len(holdout)), (256, 64))
+        self.assertTrue(set(r["prompt"] for r in training).isdisjoint(
+            r["prompt"] for r in holdout
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

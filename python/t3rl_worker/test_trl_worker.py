@@ -76,5 +76,21 @@ class TrlWorkerUnitTest(unittest.TestCase):
 
 
 
+    def test_resolve_config_accepts_the_higher_resolution_dataset(self) -> None:
+        config = trl_worker.resolve_config(
+            {
+                "datasetId": "arithmetic-rlvr-v2",
+                "evaluationRows": 64,
+                "evaluationNumGenerations": 4,
+                "evaluationBatchSize": 8,
+                "maxGeneratedTokens": 65536,
+            }
+        )
+        self.assertEqual(config["datasetId"], "arithmetic-rlvr-v2")
+        self.assertEqual(config["evaluationRows"], 64)
+        with self.assertRaises(ValueError):
+            trl_worker.resolve_config({"datasetId": "arithmetic-rlvr-v9"})
+
+
 if __name__ == "__main__":
     unittest.main()

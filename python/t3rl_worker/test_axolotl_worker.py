@@ -40,15 +40,18 @@ class AxolotlWorkerUnitTest(unittest.TestCase):
         built = self.built(
             maxSteps=3,
             numGenerations=4,
+            evaluationNumGenerations=4,
             perDeviceTrainBatchSize=4,
             temperature=0.7,
             beta=0.02,
+            maxGeneratedTokens=65536,
         )
         self.assertEqual(built["max_steps"], 3)
         self.assertEqual(built["trl"]["num_generations"], 4)
         self.assertEqual(built["trl"]["temperature"], 0.7)
         self.assertEqual(built["trl"]["beta"], 0.02)
         self.assertEqual(built["micro_batch_size"], 4)
+        self.assertEqual(built["eval_batch_size"], 2)
         self.assertEqual(built["gradient_accumulation_steps"], 1)
 
     def test_config_points_at_the_written_splits(self) -> None:
@@ -77,6 +80,39 @@ class AxolotlWorkerUnitTest(unittest.TestCase):
         )
         self.assertEqual(rows[0]["evidencePhase"], "evaluation")
         self.assertEqual(rows[0]["answer"], "2")
+
+
+    def test_resolve_config_accepts_the_higher_resolution_dataset(self) -> None:
+        config = axolotl_worker.resolve_config(
+            {
+                "datasetId": "arithmetic-rlvr-v2",
+                "evaluationRows": 64,
+                "numGenerations": 4,
+                "perDeviceTrainBatchSize": 4,
+                "evaluationNumGenerations": 4,
+                "evaluationBatchSize": 4,
+                "maxGeneratedTokens": 65536,
+            }
+        )
+        self.assertEqual(config["datasetId"], "arithmetic-rlvr-v2")
+        self.assertEqual(config["evaluationRows"], 64)
+        with self.assertRaises(ValueError):
+            axolotl_worker.resolve_config({"datasetId": "arithmetic-rlvr-v9"})
+
+
+    def test_resolve_config_refuses_an_evaluation_it_cannot_honour(self) -> None:
+        # Axolotl exposes only `num_generations`; TRL's separate eval count has
+        # no config surface, so a differing value must be refused rather than
+        # silently evaluated at the training count.
+        with self.assertRaises(ValueError):
+            self.resolved(numGenerations=2, evaluationNumGenerations=4)
+        config = self.resolved(
+            numGenerations=4,
+            perDeviceTrainBatchSize=4,
+            evaluationNumGenerations=4,
+            maxGeneratedTokens=65536,
+        )
+        self.assertEqual(config["evaluationNumGenerations"], 4)
 
 
 if __name__ == "__main__":

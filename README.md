@@ -46,11 +46,18 @@ The bundled CPU runner uses `MlpPolicy` and ships with these experiments:
 | TD3       | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 | DDPG      | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 
-An optional single-GPU preview adds one executable LLM post-training experiment:
+An optional single-GPU preview adds executable LLM post-training experiments:
 
-| Algorithm | Reward regime                | Model                        | Bundled dataset      |
-| --------- | ---------------------------- | ---------------------------- | -------------------- |
-| GRPO      | RLVR, exact-integer verifier | `Qwen/Qwen2.5-0.5B-Instruct` | `arithmetic-rlvr-v1` |
+| Algorithm | Reward regime                | Model                        | Bundled dataset      | Holdout resolution |
+| --------- | ---------------------------- | ---------------------------- | -------------------- | ------------------ |
+| GRPO      | RLVR, exact-integer verifier | `Qwen/Qwen2.5-0.5B-Instruct` | `arithmetic-rlvr-v1` | 8 samples          |
+| GRPO      | RLVR, exact-integer verifier | `Qwen/Qwen2.5-0.5B-Instruct` | `arithmetic-rlvr-v2` | 256 samples        |
+
+The `v1` dataset sits near the base model's ceiling, where a before/after comparison cannot resolve
+an effect smaller than a single sampled generation. The `v2` dataset is drawn from a difficulty tier
+a calibration run measured at a 0.427 base pass rate and evaluates a 64-row holdout four times, so
+the measurement has headroom in both directions. Both are kept: a run's dataset SHA-256 records
+which one produced it.
 
 The same task also runs through Axolotl. Because Axolotl pins exact dependency versions that
 conflict with the native TRL runner, it lives in its own environment named by
