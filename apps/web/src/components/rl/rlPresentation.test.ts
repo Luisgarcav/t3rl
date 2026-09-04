@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   formatRlDuration,
   formatRlMetricValue,
+  isLlmPostTrainingRunner,
   latestRlMetricValue,
   LLM_POST_TRAINING_METRIC_DEFINITIONS,
   rlMetricDefinitionsForRunner,
@@ -17,8 +18,12 @@ describe("RL presentation", () => {
     expect(rlStatusVariant("cancelling")).toBe("warning");
   });
 
-  it("selects LLM post-training metrics for TRL runs", () => {
+  it("selects LLM post-training presentation for TRL and Axolotl runs", () => {
+    expect(isLlmPostTrainingRunner("trl")).toBe(true);
+    expect(isLlmPostTrainingRunner("axolotl")).toBe(true);
+    expect(isLlmPostTrainingRunner("stable-baselines3")).toBe(false);
     expect(rlMetricDefinitionsForRunner("trl")).toBe(LLM_POST_TRAINING_METRIC_DEFINITIONS);
+    expect(rlMetricDefinitionsForRunner("axolotl")).toBe(LLM_POST_TRAINING_METRIC_DEFINITIONS);
     expect(LLM_POST_TRAINING_METRIC_DEFINITIONS.map((definition) => definition.key)).toContain(
       "eval/verifier_pass_rate",
     );

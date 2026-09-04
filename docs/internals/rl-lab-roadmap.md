@@ -314,6 +314,11 @@ select the next curriculum stage while preserving a reproducible account of the 
 
 ## Phase 3: scale and backend ecosystem
 
+The detailed dependency order for LLM post-training, including reproducible `uv` environments,
+checkpoint lineage, TRL/Axolotl training methods, distributed launchers, vLLM supervision, restart
+adoption, retention, and mobile delivery, lives in the
+[serious LLM post-training delivery plan](../superpowers/plans/2026-09-04-serious-llm-post-training.md).
+
 ### Goal
 
 Run the same research model on larger hardware and external schedulers without turning T3RL into a

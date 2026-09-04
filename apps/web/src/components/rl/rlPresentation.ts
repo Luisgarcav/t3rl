@@ -133,10 +133,16 @@ export const LLM_POST_TRAINING_METRIC_DEFINITIONS: ReadonlyArray<RlMetricDefinit
   },
 ];
 
+export function isLlmPostTrainingRunner(runnerId: string | null | undefined): boolean {
+  return runnerId === "trl" || runnerId === "axolotl";
+}
+
 export function rlMetricDefinitionsForRunner(
   runnerId: string | null | undefined,
 ): ReadonlyArray<RlMetricDefinition> {
-  return runnerId === "trl" ? LLM_POST_TRAINING_METRIC_DEFINITIONS : RL_METRIC_DEFINITIONS;
+  return isLlmPostTrainingRunner(runnerId)
+    ? LLM_POST_TRAINING_METRIC_DEFINITIONS
+    : RL_METRIC_DEFINITIONS;
 }
 
 export type RlStatusVariant = "error" | "info" | "outline" | "secondary" | "success" | "warning";

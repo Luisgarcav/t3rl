@@ -34,6 +34,7 @@ from rlvr import (
     SUPPORTED_DATASETS,
     SUPPORTED_MODEL,
     SUPPORTED_MODEL_REVISION,
+    VERIFIER_ID,
     _boolean,
     _float,
     _int,
@@ -42,7 +43,9 @@ from rlvr import (
     has_observed_metric,
     load_builtin_dataset,
     make_exact_integer_reward,
-    metric_value,
+    normalize_grpo_metrics,
+    order_replay_samples,
+    run_metrics_heartbeat,
     split_dataset,
     write_json,
 )
@@ -157,6 +160,10 @@ def resolve_config(raw: Any) -> dict[str, Any]:
     if effective_batch % config["numGenerations"] != 0:
         raise ValueError(
             "perDeviceTrainBatchSize × gradientAccumulationSteps must be divisible by numGenerations"
+        )
+    if config["evaluationBatchSize"] % config["evaluationNumGenerations"] != 0:
+        raise ValueError(
+            "evaluationBatchSize must be divisible by evaluationNumGenerations"
         )
     training_token_bound = (
         config["maxSteps"]
@@ -314,7 +321,7 @@ def run(args: argparse.Namespace) -> int:
                 "trainingRows": len(training_records),
                 "evaluationRows": len(evaluation_records),
                 "evaluationPolicy": "held-out-tail-v1; before-and-after; seeded-sampling",
-                "verifierId": "exact-integer-v1",
+                "verifierId": VERIFIER_ID,
                 "dependencies": evidence,
                 "execution": {
                     "adapter": "trl-native-v1",
@@ -337,23 +344,15 @@ def run(args: argparse.Namespace) -> int:
     latest_step = 0
     evaluation_passes = 0
     stop_heartbeat = threading.Event()
-
-    def heartbeat() -> None:
-        while not stop_heartbeat.wait(15):
-            emit(
-                {
-                    "type": "metrics",
-                    "step": latest_step,
-                    "wallClockMs": int((time.monotonic() - started) * 1000),
-                    "values": {
-                        "system/heartbeat": 1.0,
-                        "system/gpu_count": float(torch.cuda.device_count()),
-                    },
-                }
-            )
-
     heartbeat_thread = threading.Thread(
-        target=heartbeat, name="t3rl-heartbeat", daemon=True
+        target=lambda: run_metrics_heartbeat(
+            stop_heartbeat,
+            started=started,
+            step=lambda: latest_step,
+            gpu_count=torch.cuda.device_count,
+        ),
+        name="t3rl-heartbeat",
+        daemon=True,
     )
     heartbeat_thread.start()
 
@@ -371,79 +370,19 @@ def run(args: argparse.Namespace) -> int:
             nonlocal evaluation_passes, latest_step
             values = logs or {}
             latest_step = int(state.global_step)
-            is_evaluation = any(key.startswith("eval_") for key in values)
-            if is_evaluation:
+            if any(key.startswith("eval_") for key in values):
                 evaluation_passes += 1
-                metrics = {
-                    "eval/reward": metric_value(values, "eval_reward"),
-                    "eval/reward_std": metric_value(values, "eval_reward_std"),
-                    "eval/verifier_pass_rate": metric_value(
-                        values,
-                        "eval_rewards/exact_integer_reward/mean",
-                        "eval_reward",
-                    ),
-                    "eval/completion_length": metric_value(
-                        values, "eval_completions/mean_length"
-                    ),
-                    "eval/kl": metric_value(values, "eval_kl"),
-                    "eval/entropy": metric_value(values, "eval_entropy"),
-                }
-            else:
-                reward = metric_value(
-                    values, "reward", "rewards/exact_integer_reward/mean"
-                )
-                metrics = {
-                    "train/reward": reward,
-                    "train/reward_std": metric_value(
-                        values,
-                        "reward_std",
-                        "rewards/exact_integer_reward/std",
-                    ),
-                    "train/verifier_pass_rate": metric_value(
-                        values,
-                        "rewards/exact_integer_reward/mean",
-                        "rewards/exact_integer_reward",
-                        "reward",
-                    ),
-                    "train/kl": metric_value(values, "kl"),
-                    "train/approx_kl": metric_value(values, "kl"),
-                    "train/entropy": metric_value(values, "entropy"),
-                    "train/completion_length": metric_value(
-                        values, "completions/mean_length", "completion_length"
-                    ),
-                    "train/loss": metric_value(values, "policy_loss", "loss"),
-                    "train/policy_loss": metric_value(values, "policy_loss", "loss"),
-                    "train/learning_rate": metric_value(values, "learning_rate"),
-                    "train/grad_norm": metric_value(values, "grad_norm"),
-                    "system/num_tokens": metric_value(values, "num_tokens"),
-                    "system/step_time_seconds": metric_value(values, "step_time"),
-                    "system/gpu_memory_allocated_gb": float(
-                        torch.cuda.memory_allocated() / (1024**3)
-                    )
+            metrics = normalize_grpo_metrics(
+                values,
+                step=latest_step,
+                evaluation_passes=evaluation_passes,
+                config=config,
+                elapsed_seconds=time.monotonic() - started,
+                gpu_memory_allocated_gb=(
+                    float(torch.cuda.memory_allocated() / (1024**3))
                     if torch.cuda.is_available()
-                    else 0.0,
-                }
-            completed_training_bound = (
-                latest_step
-                * config["perDeviceTrainBatchSize"]
-                * config["gradientAccumulationSteps"]
-                * config["maxCompletionLength"]
-            )
-            completed_evaluation_bound = (
-                evaluation_passes
-                * config["evaluationRows"]
-                * config["evaluationNumGenerations"]
-                * config["maxCompletionLength"]
-            )
-            metrics["system/generated_tokens_upper_bound"] = float(
-                completed_training_bound + completed_evaluation_bound
-            )
-            elapsed_seconds = max(time.monotonic() - started, 1e-9)
-            observed_tokens = metric_value(values, "num_tokens", "eval_num_tokens")
-            metrics["system/tokens_per_second"] = (
-                float(observed_tokens) / elapsed_seconds
-                if isinstance(observed_tokens, (int, float))
-                else None
+                    else 0.0
+                ),
             )
             if not has_observed_metric(metrics):
                 return
@@ -567,7 +506,7 @@ def run(args: argparse.Namespace) -> int:
         "modelRevisionResolved": resolved_revision,
         "datasetId": config["datasetId"],
         "datasetSha256": dataset_sha,
-        "verifierId": "exact-integer-v1",
+        "verifierId": VERIFIER_ID,
         "seed": args.seed,
         "optimizerSteps": int(getattr(result, "global_step", latest_step)),
         "retainedSamples": ledger.retained_count,
@@ -600,12 +539,7 @@ def run(args: argparse.Namespace) -> int:
     write_json(args.run_dir, "evaluation.json", evaluation)
     emit({"type": "artifact", "kind": "evaluation", "path": "evaluation.json"})
     if ledger.samples:
-        replay_samples = [
-            sample
-            for phase in ["evaluation-before", "evaluation-after", "training"]
-            for sample in ledger.samples
-            if sample.get("phase") == phase
-        ]
+        replay_samples = order_replay_samples(ledger.samples)
         replay = {
             "kind": "llm-post-training",
             "environment": f"llm:{config['modelId']}",

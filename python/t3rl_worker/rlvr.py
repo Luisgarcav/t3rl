@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,10 @@ DATASET_PATHS = {
 }
 
 
-INTEGER_PATTERN = re.compile(r"(?<![\d.])[+-]?\d[\d,]*(?![\d.])")
+VERIFIER_ID = "exact-integer-v2"
+
+
+INTEGER_PATTERN = re.compile(r"(?<![\w.+-])[+-]?\d[\d,]*(?![\w.+-])")
 
 
 EMIT_LOCK = threading.Lock()
@@ -65,6 +69,28 @@ def emit(message: dict[str, Any]) -> None:
     with EMIT_LOCK:
         PROTOCOL_STDOUT.write(line)
         PROTOCOL_STDOUT.flush()
+
+
+def run_metrics_heartbeat(
+    stop: threading.Event,
+    *,
+    started: float,
+    step: Callable[[], int],
+    gpu_count: Callable[[], int],
+) -> None:
+    """Keep the worker watchdog alive while a backend performs blocking work."""
+    while not stop.wait(15):
+        emit(
+            {
+                "type": "metrics",
+                "step": step(),
+                "wallClockMs": int((time.monotonic() - started) * 1000),
+                "values": {
+                    "system/heartbeat": 1.0,
+                    "system/gpu_count": float(gpu_count()),
+                },
+            }
+        )
 
 
 def finite_metric(value: Any) -> float | str | None:
@@ -174,6 +200,16 @@ def split_dataset(
 EVIDENCE_PHASES = ("evaluation-before", "training", "evaluation-after")
 
 
+def order_replay_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order retained evidence by the phases' actual execution order."""
+    return [
+        sample
+        for phase in EVIDENCE_PHASES
+        for sample in samples
+        if sample.get("phase") == phase
+    ]
+
+
 class EvidenceLedger:
     """
     Verifier outcomes for one run.
@@ -221,7 +257,7 @@ class EvidenceLedger:
                 "completion": completion,
                 "parsedAnswer": parsed,
                 "reward": reward,
-                "verifier": {"id": "exact-integer-v1", "passed": reward == 1.0},
+                "verifier": {"id": VERIFIER_ID, "passed": reward == 1.0},
             }
         )
 
@@ -334,6 +370,91 @@ def metric_value(logs: dict[str, Any], *keys: str) -> float | str | None:
         if key in logs:
             return finite_metric(logs[key])
     return None
+
+
+def normalize_grpo_metrics(
+    logs: dict[str, Any],
+    *,
+    step: int,
+    evaluation_passes: int,
+    config: dict[str, Any],
+    elapsed_seconds: float,
+    gpu_memory_allocated_gb: float,
+) -> dict[str, float | str | None]:
+    """Translate the TRL-shaped metrics emitted by both GRPO backends."""
+    if any(key.startswith("eval_") for key in logs):
+        metrics: dict[str, float | str | None] = {
+            "eval/reward": metric_value(logs, "eval_reward"),
+            "eval/reward_std": metric_value(logs, "eval_reward_std"),
+            "eval/verifier_pass_rate": metric_value(
+                logs,
+                "eval_rewards/exact_integer_reward/mean",
+                "eval_rewards/axolotl_reward.exact_integer_reward/mean",
+                "eval_reward",
+            ),
+            "eval/completion_length": metric_value(
+                logs, "eval_completions/mean_length"
+            ),
+            "eval/kl": metric_value(logs, "eval_kl"),
+            "eval/entropy": metric_value(logs, "eval_entropy"),
+        }
+    else:
+        reward = metric_value(logs, "reward", "rewards/exact_integer_reward/mean")
+        metrics = {
+            "train/reward": reward,
+            "train/reward_std": metric_value(
+                logs,
+                "reward_std",
+                "rewards/exact_integer_reward/std",
+            ),
+            "train/verifier_pass_rate": metric_value(
+                logs,
+                "rewards/exact_integer_reward/mean",
+                "rewards/axolotl_reward.exact_integer_reward/mean",
+                "rewards/exact_integer_reward",
+                "reward",
+            ),
+            "train/kl": metric_value(logs, "kl"),
+            "train/approx_kl": metric_value(logs, "kl"),
+            "train/entropy": metric_value(logs, "entropy"),
+            "train/completion_length": metric_value(
+                logs, "completions/mean_length", "completion_length"
+            ),
+            "train/loss": metric_value(logs, "policy_loss", "loss"),
+            "train/policy_loss": metric_value(logs, "policy_loss", "loss"),
+            "train/learning_rate": metric_value(logs, "learning_rate"),
+            "train/grad_norm": metric_value(logs, "grad_norm"),
+            "system/step_time_seconds": metric_value(logs, "step_time"),
+        }
+
+    observed_tokens = metric_value(logs, "num_tokens", "eval_num_tokens")
+    completed_training_bound = (
+        step
+        * config["perDeviceTrainBatchSize"]
+        * config["gradientAccumulationSteps"]
+        * config["maxCompletionLength"]
+    )
+    completed_evaluation_bound = (
+        evaluation_passes
+        * config["evaluationRows"]
+        * config["evaluationNumGenerations"]
+        * config["maxCompletionLength"]
+    )
+    metrics.update(
+        {
+            "system/num_tokens": observed_tokens,
+            "system/generated_tokens_upper_bound": float(
+                completed_training_bound + completed_evaluation_bound
+            ),
+            "system/tokens_per_second": (
+                float(observed_tokens) / max(elapsed_seconds, 1e-9)
+                if isinstance(observed_tokens, (int, float))
+                else None
+            ),
+            "system/gpu_memory_allocated_gb": float(gpu_memory_allocated_gb),
+        }
+    )
+    return metrics
 
 
 def has_observed_metric(metrics: dict[str, Any]) -> bool:

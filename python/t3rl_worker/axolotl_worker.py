@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import traceback
 from typing import Any
 
@@ -30,13 +31,18 @@ from rlvr import (
     SUPPORTED_DATASETS,
     SUPPORTED_MODEL,
     SUPPORTED_MODEL_REVISION,
+    VERIFIER_ID,
     _boolean,
     _float,
     _int,
     _string,
     emit,
+    has_observed_metric,
     load_builtin_dataset,
     make_exact_integer_reward,
+    normalize_grpo_metrics,
+    order_replay_samples,
+    run_metrics_heartbeat,
     split_dataset,
     write_json,
 )
@@ -376,7 +382,7 @@ def run(args: argparse.Namespace) -> int:
                 "trainingRows": len(training_records),
                 "evaluationRows": len(evaluation_records),
                 "evaluationPolicy": "held-out-tail-v1; before-and-after; seeded-sampling",
-                "verifierId": "exact-integer-v1",
+                "verifierId": VERIFIER_ID,
                 "dependencies": evidence,
                 "execution": {
                     "adapter": "axolotl-direct-v1",
@@ -389,24 +395,38 @@ def run(args: argparse.Namespace) -> int:
         }
     )
 
+    latest_step = 0
+    evaluation_passes = 0
+
     class MetricsCallback(deps["TrainerCallback"]):  # type: ignore[misc]
         def on_log(self, callback_args, state, control, logs=None, **_):
-            if not logs:
+            nonlocal evaluation_passes, latest_step
+            values = logs or {}
+            latest_step = int(getattr(state, "global_step", 0))
+            if any(key.startswith("eval_") for key in values):
+                evaluation_passes += 1
+            metrics = normalize_grpo_metrics(
+                values,
+                step=latest_step,
+                evaluation_passes=evaluation_passes,
+                config=config,
+                elapsed_seconds=time.monotonic() - started,
+                gpu_memory_allocated_gb=(
+                    float(torch.cuda.memory_allocated() / (1024**3))
+                    if torch.cuda.is_available()
+                    else 0.0
+                ),
+            )
+            if not has_observed_metric(metrics):
                 return
-            values = {
-                f"{'eval' if key.startswith('eval_') else 'train'}/{key}": value
-                for key, value in logs.items()
-                if isinstance(value, (int, float))
-            }
-            if values:
-                emit(
-                    {
-                        "type": "metrics",
-                        "step": int(getattr(state, "global_step", 0)),
-                        "wallClockMs": int((time.monotonic() - started) * 1000),
-                        "values": values,
-                    }
-                )
+            emit(
+                {
+                    "type": "metrics",
+                    "step": latest_step,
+                    "wallClockMs": int((time.monotonic() - started) * 1000),
+                    "values": metrics,
+                }
+            )
 
     axolotl_config = build_axolotl_config(
         config,
@@ -418,17 +438,33 @@ def run(args: argparse.Namespace) -> int:
     write_json(args.run_dir, "axolotl-config.json", axolotl_config)
     emit({"type": "artifact", "kind": "config", "path": "axolotl-config.json"})
 
-    # Axolotl and Transformers write human progress to stdout; stdout here is
-    # the versioned worker protocol, so their output goes to stderr instead.
-    with redirect_stdout(sys.stderr):
-        cfg = deps["load_cfg"](deps["DictDefault"](axolotl_config))
-        dataset_meta = deps["load_preference_datasets"](cfg=cfg)
-        trainer, _model, _tokenizer, _peft, _processor = deps[
-            "setup_model_and_trainer"
-        ](cfg, dataset_meta)
-        TRAINER = trainer
-        trainer.add_callback(MetricsCallback())
-        trainer.train()
+    stop_heartbeat = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=lambda: run_metrics_heartbeat(
+            stop_heartbeat,
+            started=started,
+            step=lambda: latest_step,
+            gpu_count=torch.cuda.device_count,
+        ),
+        name="t3rl-heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+    try:
+        # Axolotl and Transformers write human progress to stdout; stdout here is
+        # the versioned worker protocol, so their output goes to stderr instead.
+        with redirect_stdout(sys.stderr):
+            cfg = deps["load_cfg"](deps["DictDefault"](axolotl_config))
+            dataset_meta = deps["load_preference_datasets"](cfg=cfg)
+            trainer, _model, _tokenizer, _peft, _processor = deps[
+                "setup_model_and_trainer"
+            ](cfg, dataset_meta)
+            TRAINER = trainer
+            trainer.add_callback(MetricsCallback())
+            trainer.train()
+    finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=2)
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     training = LEDGER.summarize("training")
@@ -454,7 +490,7 @@ def run(args: argparse.Namespace) -> int:
             "modelRevisionResolved": config["modelRevision"],
             "datasetId": config["datasetId"],
             "datasetSha256": dataset_sha,
-            "verifierId": "exact-integer-v1",
+            "verifierId": VERIFIER_ID,
             "optimizerSteps": config["maxSteps"],
             "trainingVerifierPassRate": training["verifierPassRate"],
             "evaluationBeforePassRate": before_rate,
@@ -491,12 +527,7 @@ def run(args: argparse.Namespace) -> int:
     emit({"type": "artifact", "kind": "evaluation", "path": "evaluation.json"})
 
     if LEDGER.samples:
-        replay_samples = [
-            sample
-            for phase in ["evaluation-before", "evaluation-after", "training"]
-            for sample in LEDGER.samples
-            if sample.get("phase") == phase
-        ]
+        replay_samples = order_replay_samples(LEDGER.samples)
         write_json(
             args.run_dir,
             "replay.json",

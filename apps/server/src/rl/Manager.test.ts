@@ -511,6 +511,54 @@ describe("RlManager", () => {
     }),
   );
 
+  it.effect("does not merge metric values from different steps", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+
+          worker.emitStdout(
+            JSON.stringify({
+              type: "metrics",
+              step: 7,
+              wallClockMs: 100,
+              values: { "train/reward": 0.5 },
+            }),
+          );
+          worker.emitStdout(
+            JSON.stringify({
+              type: "metrics",
+              step: 8,
+              wallClockMs: 120,
+              values: { "eval/reward": 0.875 },
+            }),
+          );
+          yield* settle;
+          yield* TestClock.adjust("1 second");
+          yield* settle;
+
+          const detail = yield* manager.get({ runId });
+          assert.deepStrictEqual(detail.metrics, [
+            {
+              step: 8,
+              wallClockMs: 120,
+              values: { "eval/reward": 0.875 },
+            },
+          ]);
+        }),
+      );
+    }),
+  );
+
   it.effect("replays a snapshot then live events to a late subscriber", () =>
     Effect.gen(function* () {
       const worker = new FakeWorkerProcess();

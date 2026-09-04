@@ -36,6 +36,7 @@ class TrlWorkerUnitTest(unittest.TestCase):
             {"useVllm": True},
             {"worldSize": 2},
             {"perDeviceTrainBatchSize": 3, "numGenerations": 2},
+            {"evaluationBatchSize": 3, "evaluationNumGenerations": 2},
             {"maxGeneratedTokens": 127},
             {"maxWallClockSeconds": 1800, "maxGpuHours": 0.49},
         ]

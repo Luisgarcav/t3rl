@@ -62,6 +62,7 @@ import {
   formatRlBytes,
   formatRlDuration,
   formatRlState,
+  isLlmPostTrainingRunner,
   rlMetricDefinitionsForRunner,
   rlStatusVariant,
 } from "./rlPresentation";
@@ -776,7 +777,7 @@ function RunDetail({
         <RunBehavior
           artifacts={artifacts}
           environmentId={environmentId}
-          llmPostTraining={manifest?.runnerId === "trl"}
+          llmPostTraining={isLlmPostTrainingRunner(manifest?.runnerId)}
           runId={runId}
           terminal={isTerminalRlRunState(summary.state)}
         />

@@ -81,6 +81,20 @@ class AxolotlWorkerUnitTest(unittest.TestCase):
         self.assertEqual(rows[0]["evidencePhase"], "evaluation")
         self.assertEqual(rows[0]["answer"], "2")
 
+    def test_metrics_use_the_shared_ui_names_and_system_instrumentation(self) -> None:
+        metrics = axolotl_worker.normalize_grpo_metrics(
+            {"eval_reward": 0.75, "eval_num_tokens": 120},
+            step=4,
+            evaluation_passes=1,
+            config=self.resolved(),
+            elapsed_seconds=2.0,
+            gpu_memory_allocated_gb=3.5,
+        )
+        self.assertEqual(metrics["eval/reward"], 0.75)
+        self.assertEqual(metrics["eval/verifier_pass_rate"], 0.75)
+        self.assertNotIn("eval/eval_reward", metrics)
+        self.assertEqual(metrics["system/tokens_per_second"], 60.0)
+        self.assertEqual(metrics["system/gpu_memory_allocated_gb"], 3.5)
 
     def test_resolve_config_accepts_the_higher_resolution_dataset(self) -> None:
         config = axolotl_worker.resolve_config(

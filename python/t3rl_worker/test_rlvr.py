@@ -55,16 +55,19 @@ class RlvrUnitTest(unittest.TestCase):
         )
         self.assertEqual(rlvr.extract_final_integer("-1,024"), "-1024")
         self.assertIsNone(rlvr.extract_final_integer("no integer"))
+        self.assertIsNone(rlvr.extract_final_integer("4e42"))
+        self.assertIsNone(rlvr.extract_final_integer("answer42"))
 
         ledger = rlvr.EvidenceLedger(6)
         reward = rlvr.make_exact_integer_reward(ledger)
         values = reward(
-            completions=["The answer is 12", "I think 8"],
-            answer=["12", "9"],
-            prompts=["7 + 5", "18 - 9"],
+            completions=["The answer is 12", "I think 8", "answer12"],
+            answer=["12", "9", "12"],
+            prompts=["7 + 5", "18 - 9", "7 + 5"],
         )
-        self.assertEqual(values, [1.0, 0.0])
+        self.assertEqual(values, [1.0, 0.0, 0.0])
         samples = ledger.samples
+        self.assertEqual(samples[0]["verifier"]["id"], "exact-integer-v2")
         self.assertTrue(samples[0]["verifier"]["passed"])
         self.assertFalse(samples[1]["verifier"]["passed"])
         self.assertEqual(samples[0]["phase"], "training")
@@ -156,6 +159,67 @@ class RlvrUnitTest(unittest.TestCase):
         self.assertEqual(rlvr.finite_metric(math.inf), "+inf")
         self.assertEqual(rlvr.finite_metric(-math.inf), "-inf")
         self.assertIsNone(rlvr.finite_metric(None))
+
+    def test_heartbeat_emits_liveness_metrics_until_stopped(self) -> None:
+        stop = mock.Mock()
+        stop.wait.side_effect = [False, True]
+        with (
+            mock.patch.object(rlvr, "emit") as emit,
+            mock.patch.object(rlvr.time, "monotonic", return_value=12.0),
+        ):
+            rlvr.run_metrics_heartbeat(
+                stop,
+                started=2.0,
+                step=lambda: 7,
+                gpu_count=lambda: 2,
+            )
+
+        emit.assert_called_once_with(
+            {
+                "type": "metrics",
+                "step": 7,
+                "wallClockMs": 10_000,
+                "values": {"system/heartbeat": 1.0, "system/gpu_count": 2.0},
+            }
+        )
+        self.assertEqual(stop.wait.call_args_list, [mock.call(15), mock.call(15)])
+
+    def test_grpo_metrics_are_normalized_for_the_ui(self) -> None:
+        metrics = rlvr.normalize_grpo_metrics(
+            {
+                "eval_reward": 0.75,
+                "eval_rewards/exact_integer_reward/mean": 0.5,
+                "eval_num_tokens": 120,
+            },
+            step=4,
+            evaluation_passes=2,
+            config={
+                "perDeviceTrainBatchSize": 2,
+                "gradientAccumulationSteps": 1,
+                "maxCompletionLength": 8,
+                "evaluationRows": 3,
+                "evaluationNumGenerations": 2,
+            },
+            elapsed_seconds=2.0,
+            gpu_memory_allocated_gb=3.5,
+        )
+
+        self.assertEqual(metrics["eval/reward"], 0.75)
+        self.assertEqual(metrics["eval/verifier_pass_rate"], 0.5)
+        self.assertNotIn("eval/eval_reward", metrics)
+        self.assertEqual(metrics["system/num_tokens"], 120.0)
+        self.assertEqual(metrics["system/tokens_per_second"], 60.0)
+        self.assertEqual(metrics["system/gpu_memory_allocated_gb"], 3.5)
+        self.assertEqual(metrics["system/generated_tokens_upper_bound"], 160.0)
+
+    def test_replay_samples_follow_execution_order(self) -> None:
+        samples = [
+            {"phase": "training", "value": 2},
+            {"phase": "evaluation-after", "value": 3},
+            {"phase": "evaluation-before", "value": 1},
+        ]
+        ordered = rlvr.order_replay_samples(samples)
+        self.assertEqual([sample["value"] for sample in ordered], [1, 2, 3])
 
     def test_reward_accepts_an_explicit_phase_from_the_backend(self) -> None:
         ledger = rlvr.EvidenceLedger(9)
