@@ -36,6 +36,21 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      - name: Check RL environment locks
+        run: |
+          uv lock --check --project python/environments/sb3
+          uv lock --check --project python/environments/trl
+          uv lock --check --project python/environments/axolotl
+
+      - name: Test RL worker protocol
+        working-directory: python/t3rl_worker
+        run: >-
+          python3 -m unittest test_checkpointing test_fake_worker test_rlvr test_trl_worker
+          test_axolotl_worker test_sb3_worker
+
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 

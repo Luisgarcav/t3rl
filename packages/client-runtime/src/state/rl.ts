@@ -2,9 +2,10 @@ import {
   type RlArtifactMetadata,
   type RlMetricBatch,
   type RlResolvedManifest,
+  type RlRunLineage,
   type RlRunSummary,
   type RlSubscriptionEvent,
-  RL_MAX_RUN_ARTIFACTS,
+  RL_MAX_SNAPSHOT_ARTIFACTS,
   RL_MAX_SNAPSHOT_METRIC_BATCHES,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -21,6 +22,7 @@ import {
 export interface RlRunProjection {
   readonly summary: RlRunSummary;
   readonly manifest: RlResolvedManifest | null;
+  readonly lineage: RlRunLineage;
   readonly artifacts: ReadonlyArray<RlArtifactMetadata>;
   readonly metrics: ReadonlyArray<RlMetricBatch>;
 }
@@ -32,7 +34,7 @@ function appendArtifact(
   const next = artifacts
     .filter((entry) => entry.artifactId !== artifact.artifactId)
     .concat(artifact);
-  return next.slice(-RL_MAX_RUN_ARTIFACTS);
+  return next.slice(-RL_MAX_SNAPSHOT_ARTIFACTS);
 }
 
 function appendMetricBatch(
@@ -55,12 +57,19 @@ export function applyRlSubscriptionEvent(
       return {
         summary: event.summary,
         manifest: event.manifest,
+        lineage: event.lineage,
         artifacts: event.artifacts,
         metrics: event.metrics,
       };
     case "Lifecycle":
       return current === null
-        ? { summary: event.summary, manifest: null, artifacts: [], metrics: [] }
+        ? {
+            summary: event.summary,
+            manifest: null,
+            lineage: { edges: [], truncated: false },
+            artifacts: [],
+            metrics: [],
+          }
         : { ...current, summary: event.summary };
     case "Manifest":
       return current === null ? null : { ...current, manifest: event.manifest };
@@ -94,6 +103,11 @@ export function createRlEnvironmentAtoms<R, E>(
       tag: WS_METHODS.rlGetRun,
       staleTimeMs: 5_000,
     }),
+    artifacts: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:rl:artifacts",
+      tag: WS_METHODS.rlListArtifacts,
+      staleTimeMs: 5_000,
+    }),
     run: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:rl:run",
       tag: WS_METHODS.rlSubscribeRun,
@@ -107,9 +121,34 @@ export function createRlEnvironmentAtoms<R, E>(
       label: "environment-data:rl:start",
       tag: WS_METHODS.rlStartRun,
     }),
+    resume: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:resume",
+      tag: WS_METHODS.rlResumeRun,
+    }),
+    warmStart: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:warm-start",
+      tag: WS_METHODS.rlWarmStartRun,
+    }),
     cancel: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:rl:cancel",
       tag: WS_METHODS.rlCancelRun,
+    }),
+    createStudy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:create-study",
+      tag: WS_METHODS.rlCreateStudy,
+    }),
+    study: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:rl:study",
+      tag: WS_METHODS.rlGetStudy,
+      staleTimeMs: 2_000,
+    }),
+    compareStudy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:compare-study",
+      tag: WS_METHODS.rlCompareStudy,
+    }),
+    validateExperiment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:validate-experiment",
+      tag: WS_METHODS.rlValidateExperiment,
     }),
   };
 }

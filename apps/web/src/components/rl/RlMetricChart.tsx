@@ -14,6 +14,7 @@ const CHART_PADDING = 8;
 
 interface ChartGeometry {
   readonly path: string;
+  readonly pointCount: number;
   readonly minimum: number;
   readonly maximum: number;
   readonly latestPoint: {
@@ -48,7 +49,13 @@ function buildChartGeometry(points: ReturnType<typeof selectRlMetricPoints>): Ch
   const path = chartPoints
     .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
     .join(" ");
-  return { path, minimum, maximum, latestPoint: chartPoints.at(-1)! };
+  return {
+    path,
+    pointCount: chartPoints.length,
+    minimum,
+    maximum,
+    latestPoint: chartPoints.at(-1)!,
+  };
 }
 
 export function RlMetricChart({
@@ -96,15 +103,18 @@ export function RlMetricChart({
                 strokeDasharray="3 4"
                 vectorEffect="non-scaling-stroke"
               />
-              <path
-                d={geometry.path}
-                fill="none"
-                stroke={definition.color}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                vectorEffect="non-scaling-stroke"
-              />
+              {geometry.pointCount > 1 ? (
+                <path
+                  d={geometry.path}
+                  data-slot="rl-metric-chart-line"
+                  fill="none"
+                  stroke={definition.color}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
             </svg>
             <span
               aria-hidden

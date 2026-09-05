@@ -5,7 +5,7 @@
 t3RL brings experiment execution, live evidence, run comparison, diagnostics, and coding agents
 into one desktop workspace. It builds on [T3 Code](https://github.com/pingdotgg/t3code), preserving
 its fast, remote-ready agent interface while adding a project-scoped RL Lab backed by Python,
-Gymnasium, Stable-Baselines3, and an optional TRL adapter for bounded LLM post-training.
+Gymnasium, Stable-Baselines3, TRL, and Axolotl adapters for bounded LLM post-training.
 
 > [!WARNING]
 > t3RL is alpha software. The current release is intended for local research and development, not
@@ -24,6 +24,12 @@ Gymnasium, Stable-Baselines3, and an optional TRL adapter for bounded LLM post-t
   decisions, and rewards.
 - Compares compatible runs across seeds while surfacing configuration, source, and environment
   drift.
+- Creates reproducible multi-seed studies with paired-seed estimators, confidence intervals, and
+  explicit held-out evaluation protocols.
+- Saves verified checkpoints and adapter artifacts with content identity and lineage, then supports
+  exact resume and compatible warm-start flows.
+- Loads project-owned experiment definitions from `.t3rl/experiments/` while snapshotting local
+  datasets, verifiers, and definitions into each run.
 - Provides explainable diagnostic signals for return collapse, non-finite values, excessive KL,
   low entropy, divergent value loss, stalled streams, and train/evaluation gaps.
 - Explores retained metrics as a chart, bounded data table, or declarative source, and explains the
@@ -32,6 +38,25 @@ Gymnasium, Stable-Baselines3, and an optional TRL adapter for bounded LLM post-t
   falsifiable iteration at a time.
 - Gives Codex, Claude Code, Cursor, Grok, and OpenCode project-scoped tools for inspecting RL
   evidence and, with the active permission mode, starting or cancelling runs.
+
+## What's new in v0.0.34
+
+This release turns the LLM preview into a reproducible post-training workflow:
+
+- Immutable model, dataset, verifier, environment, artifact, and checkpoint identity is recorded
+  with SHA-256 evidence and compatibility checks.
+- Runs can publish bounded checkpoints, resume exactly, or warm-start another compatible method;
+  cancellation requests a final checkpoint within a fixed deadline.
+- Studies schedule independent seeds and compare paired results with estimator metadata, uncertainty,
+  exclusions, and protocol drift made visible.
+- Projects can define versioned SFT, DPO, or GRPO experiments in `.t3rl/experiments/*.json`; local
+  inputs are validated, contained under the project root, snapshotted, and reverified before launch.
+- Native TRL SFT/DPO execution and fixed Axolotl configuration translation share typed datasets,
+  normalized metrics, held-out evaluation claims, LoRA publication, resume, and warm-start semantics.
+- Runner capabilities are method-specific, so CPU-capable SFT/DPO and CUDA-bound GRPO report separate
+  availability and actionable remedies.
+- The RL agent toolkit now covers experiment validation, checkpoints, studies, comparisons, and
+  warm-start operations in addition to run inspection and control.
 
 ## RL execution coverage
 
@@ -46,7 +71,15 @@ The bundled CPU runner uses `MlpPolicy` and ships with these experiments:
 | TD3       | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 | DDPG      | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 
-An optional single-GPU preview adds executable LLM post-training experiments:
+Optional LLM post-training adapters support these method families:
+
+| Method | Runner support | Dataset contract                       | Evaluation claim    |
+| ------ | -------------- | -------------------------------------- | ------------------- |
+| SFT    | TRL, Axolotl   | Text or conversation                   | Held-out loss       |
+| DPO    | TRL, Axolotl   | Prompt/chosen/rejected preference rows | Preference accuracy |
+| GRPO   | TRL, Axolotl   | Prompt/reference RLVR rows             | Verifier pass rate  |
+
+The bundled single-GPU GRPO preview includes these experiments:
 
 | Algorithm | Reward regime                | Model                        | Bundled dataset      | Holdout resolution |
 | --------- | ---------------------------- | ---------------------------- | -------------------- | ------------------ |
@@ -65,12 +98,13 @@ conflict with the native TRL runner, it lives in its own environment named by
 `T3RL_PYTHON_AXOLOTL`. Both runners resolve the same model, dataset, verifier, and split policy and
 emit the same artifacts, so a comparison between them is attributable to the backend.
 
-The TRL worker records the resolved model commit, dataset SHA-256, split policy, verifier identity,
-dependency fingerprint, execution backend, and token/wall-clock/GPU-hour limits. It evaluates a
+The workers record the resolved model commit, dataset SHA-256, split policy, verifier identity,
+dependency fingerprint, execution backend, and token/wall-clock/GPU-hour limits. They evaluate a
 versioned holdout before and after training, emits optimizer and resource metrics, and retains
-bounded prompt/completion evidence plus a separate evaluation artifact. It deliberately does not
-retain a model checkpoint in this slice. vLLM, distributed scheduling, arbitrary models, and
-production-scale datasets are not yet integrated.
+bounded prompt/completion evidence plus a separate evaluation artifact. Checkpoint policy is
+explicit and retained LoRA adapters carry verified base-model and source-checkpoint lineage. vLLM,
+distributed scheduling, arbitrary unvalidated launch commands, and production-scale datasets are
+not yet integrated.
 
 The research catalog is intentionally broader than the execution catalog. It can help plan and
 review work involving tabular RL, model-based RL, offline and imitation learning, multi-agent RL,
@@ -109,43 +143,48 @@ cd t3rl
 vp i
 ```
 
-### 2. Install the optional RL runtime
+### 2. Reproduce an optional RL runtime
 
-On macOS or Linux:
+The three runners use independent committed locks because their framework constraints can conflict.
+Sync only the environments you need. On macOS or Linux:
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ./python
-export T3RL_PYTHON="$PWD/.venv/bin/python"
+uv sync --project python/environments/sb3 --locked
+export T3RL_PYTHON_STABLE_BASELINES3="$PWD/python/environments/sb3/.venv/bin/python"
 ```
 
-For the optional GRPO/RLVR experiment, install the LLM extra into that environment and use a CUDA
-PyTorch runtime:
+For the optional GRPO/RLVR experiments, reproduce TRL and Axolotl separately and use CUDA-capable
+PyTorch runtimes:
 
 ```bash
-uv pip install --python .venv/bin/python -e './python[llm]'
-.venv/bin/python -c 'import torch; assert torch.cuda.is_available()'
+uv sync --project python/environments/trl --locked
+uv sync --project python/environments/axolotl --locked
+export T3RL_PYTHON_TRL="$PWD/python/environments/trl/.venv/bin/python"
+export T3RL_PYTHON_AXOLOTL="$PWD/python/environments/axolotl/.venv/bin/python"
+"$T3RL_PYTHON_TRL" -c 'import torch; assert torch.cuda.is_available()'
+"$T3RL_PYTHON_AXOLOTL" -c 'import torch; assert torch.cuda.is_available()'
 ```
 
 On Windows PowerShell:
 
 ```powershell
-uv venv --python 3.12 .venv
-uv pip install --python .\.venv\Scripts\python.exe -e .\python
-$env:T3RL_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
+uv sync --project python/environments/sb3 --locked
+$env:T3RL_PYTHON_STABLE_BASELINES3 = (Resolve-Path .\python\environments\sb3\.venv\Scripts\python.exe).Path
 ```
 
-The optional LLM extra can be installed with
-`uv pip install --python .\.venv\Scripts\python.exe -e '.\python[llm]'`; the configured PyTorch
-build must report an available CUDA device before RL Lab enables the TRL runner.
+Use the same `uv sync --project ... --locked` command and dedicated `T3RL_PYTHON_TRL` or
+`T3RL_PYTHON_AXOLOTL` variable for an LLM environment. `uv lock --check --project <environment>`
+verifies that a committed lock still matches its project metadata without changing it.
 
 The Python environment is optional if you only want to open the app or use its agent features.
 RL Lab checks capabilities when it opens and shows an actionable message instead of installing
-packages automatically.
+packages automatically. When a selected interpreter belongs to one of these projects, run startup
+also verifies its lock and records the lockfile SHA-256, Python, platform, framework, PyTorch, CUDA,
+and driver evidence in the immutable manifest.
 
 ### 3. Launch Electron
 
-Run this from the same terminal in which `T3RL_PYTHON` is set:
+Run this from the same terminal in which the selected `T3RL_PYTHON_*` variables are set:
 
 ```bash
 vp run dev:desktop
@@ -173,7 +212,8 @@ vp run dist:desktop:win    # Windows NSIS installer
 1. Open or create a project in t3RL.
 2. Select the flask button next to the project, or open an empty right panel and choose
    **Experiments**.
-3. Confirm that the experiment's `stable-baselines3` or `trl` runner is available.
+3. Confirm that the experiment's selected method is available on its `stable-baselines3`, `trl`, or
+   `axolotl` runner.
 4. Choose a bundled experiment, set an integer seed, and select **Start run**.
 5. Use **Overview** for lifecycle, live metrics, manifests, cancellation, and artifacts; use
    **Data** to inspect raw metric observations and **Algorithm** to explore the resolved training
@@ -192,14 +232,15 @@ view without duplicating metric points or artifacts.
 The default agent receives the product-native `t3-code` RL toolkit for the current project. The same
 tools are available to every built-in provider without additional RL-specific configuration.
 
-| Research task                                           | Agent tools                     |
-| ------------------------------------------------------- | ------------------------------- |
-| Check runners and experiments                           | `rl_capabilities`               |
-| Find and inspect retained runs                          | `rl_list_runs`, `rl_get_run`    |
-| Explore metrics and diagnostics evidence                | `rl_query_metrics`              |
-| Compare configurations and results                      | `rl_compare_runs`               |
-| Read logs, summaries, evaluations, and behavior replays | `rl_read_artifact`              |
-| Execute or stop training                                | `rl_start_run`, `rl_cancel_run` |
+| Research task                                           | Agent tools                                                           |
+| ------------------------------------------------------- | --------------------------------------------------------------------- |
+| Check runners and experiments                           | `rl_capabilities`, `rl_validate_experiment`                           |
+| Find and inspect retained runs                          | `rl_list_runs`, `rl_get_run`                                          |
+| Explore metrics and diagnostics evidence                | `rl_query_metrics`                                                    |
+| Create and inspect multi-seed studies                   | `rl_create_study`, `rl_get_study`                                     |
+| Compare configurations, studies, and results            | `rl_compare_runs`, `rl_compare_study`                                 |
+| Read logs, summaries, evaluations, and behavior replays | `rl_read_artifact`                                                    |
+| Execute, resume, warm-start, or stop training           | `rl_start_run`, `rl_resume_run`, `rl_warm_start_run`, `rl_cancel_run` |
 
 The server derives project scope from the agent's thread, so a tool call cannot select another
 project. Metric responses and textual artifacts are bounded; binary models are not copied into the

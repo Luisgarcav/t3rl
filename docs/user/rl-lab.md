@@ -26,10 +26,11 @@ The launch screen checks the server's runner capabilities before enabling **Star
 Stable-Baselines3, TRL, Axolotl, or the CUDA runtime required by an experiment is unavailable, the
 warning includes the server-side remedy; RL Lab never installs packages automatically.
 
-Axolotl pins dependency versions that cannot share an environment with the TRL runner, so it needs
-its own Python environment. Point `T3RL_PYTHON_AXOLOTL` at that interpreter on the server; runners
-without a dedicated variable keep using the shared `T3RL_PYTHON`. Each run records the interpreter
-that served it, so a result always says which environment produced it.
+Stable-Baselines3, TRL, and Axolotl use independent locked environments because their framework
+constraints can conflict. The server administrator selects them with
+`T3RL_PYTHON_STABLE_BASELINES3`, `T3RL_PYTHON_TRL`, or `T3RL_PYTHON_AXOLOTL`; a shared
+`T3RL_PYTHON` remains a fallback. RL Lab checks a discovered lock without changing it and records
+its SHA-256 together with the interpreter, framework, platform, PyTorch, CUDA, and driver evidence.
 
 Choose a catalog experiment, enter an integer seed, and start the run. The bundled
 Stable-Baselines3 catalog covers PPO, A2C, and DQN on `CartPole-v1`, plus SAC, TD3, and DDPG on
@@ -52,8 +53,8 @@ one produced a result.
 The project history shows every retained run and its authoritative lifecycle state. Selecting a run
 opens its live view. The navigation under the lab header separates six investigation surfaces:
 
-- **Overview** shows lifecycle status, cancellation, live training metrics, the immutable resolved
-  manifest, and signed artifact links.
+- **Overview** shows lifecycle status, cancellation, continuation actions, live training metrics,
+  the immutable resolved manifest, signed artifact links, and run lineage.
 - **Data** explores every retained metric, including custom worker keys. Switch between a bounded
   line chart, the latest raw observations, and the declarative source used by the renderer.
 - **Algorithm** walks through a conceptual stage graph derived from the immutable resolved
@@ -69,14 +70,40 @@ opens its live view. The navigation under the lab header separates six investiga
   low entropy, divergent value loss, stalled streams, and train/evaluation gaps. These are
   explainable inspection signals, not causal conclusions.
 
-RL Lab receives a bounded snapshot before live updates. Reopening the page or reconnecting to the
-server resumes the same run ID without duplicating metric points or artifacts. A quiet metric stream
-does not imply completion; only the lifecycle status does.
+RL Lab receives a bounded snapshot before live updates. Artifact-heavy runs use a separate paginated
+artifact inventory. New artifacts show their server-computed SHA-256 and `ready` state; artifacts
+from older runs remain readable and are labeled **Legacy · unverified**. Reopening the page or
+reconnecting to the server resumes the same run ID without duplicating metric points or artifacts.
+A quiet metric stream does not imply completion; only the lifecycle status does.
+
+### Continue from a checkpoint or adapter
+
+Post-training runs publish two deliberately different outputs:
+
+- **Exact resume** checkpoints include the LoRA weights plus trainer, optimizer, scheduler, random
+  number generator, data cursor, and—when needed—gradient scaler state. RL Lab only offers
+  **Resume step N** after the server has verified the directory, its SHA-256, and all compatibility
+  evidence.
+- **PEFT adapters** contain portable LoRA weights and configuration tied to a pinned base model.
+  **Start from adapter** creates a warm start; it does not claim to preserve optimizer or data
+  position.
+
+Both actions create a new child run. The parent run and its artifacts remain immutable. The child
+records the relation, parent ID, source artifact ID, source step, and exact source hash; **Run
+lineage** shows that chain. A changed model or tokenizer revision, PEFT configuration, precision,
+quantization, trainable module set, framework, environment, or lock causes an explicit compatibility
+error instead of a best-effort continuation.
+
+Cancelling a post-training run first requests a graceful checkpoint. The worker gets the deadline
+declared in its resolved policy; the server then terminates the exact process it started if the
+deadline expires.
 
 The default coding agent can use these same project-scoped utilities through the product-native RL
 Lab tools. It can inspect the experiment catalog, manifests, metrics, comparisons, textual artifacts,
 logs, evaluations, environment trajectories, and LLM prompt/completion verifier replays without
-relying on screenshots. Starting or cancelling a run remains a permission-aware action. Turning
+relying on screenshots. `rl_list_artifacts` traverses a large inventory one bounded page at a time;
+`rl_resume_run` and `rl_warm_start_run` preserve the same distinction and lineage as the UI.
+Starting, resuming, warm-starting, or cancelling a run remains a permission-aware action. Turning
 off agent browser access disables only browser control; it does not remove the agent's RL Lab
 evidence tools.
 
@@ -85,11 +112,12 @@ opens Autoresearch. From Autoresearch, **Open run** returns to the selected base
 
 ## Interpretation limits
 
-Each run uses one seed and one local worker process, and does not resume after a server failure.
-Control experiments run on CPU; the bundled GRPO preview requires CUDA, records token, wall-clock,
-and GPU-hour limits, and intentionally retains no checkpoint. Its small fixed holdout demonstrates
-the before/after evaluation path but is not a statistically strong benchmark. It does not yet
-support arbitrary models, vLLM, or distributed training. Multi-seed comparison
+Each run uses one seed and one local worker process. The server does not yet adopt a still-running
+worker after its own restart; it marks that attempt `interrupted`, and a verified checkpoint from the
+attempt may be used to create a child run. Control experiments run on CPU; the bundled GRPO path
+requires CUDA and records token, wall-clock, GPU-hour, checkpoint, and retention limits. Its small
+fixed holdout demonstrates the before/after evaluation path but is not a statistically strong
+benchmark. It does not yet support arbitrary models, vLLM, or distributed training. Multi-seed comparison
 combines separate runs rather than launching a sweep, and uses the resolved seed as the statistical
 unit.
 Automatic diagnostics use configurable heuristics and should be checked against the task,
@@ -144,3 +172,48 @@ The first Autoresearch slice is deliberately review-gated. The agent must stop a
 falsifiable hypothesis, a minimal diff, and an exact run plan. It cannot apply changes, start
 training, expand the budget, change the evaluator, or begin another iteration without a later
 explicit approval. This is not yet an unattended multi-iteration controller.
+
+# Studies and paired comparisons
+
+A study groups two or more experiment variants under one immutable evaluation protocol and an
+explicit set of training, data, evaluation-sample, and generation seeds. Study runs are scheduled
+with bounded concurrency. A failed or cancelled member leaves the study partial instead of making
+it look complete.
+
+Use the Compare view with a study ID to request the server-owned paired analysis. The result always
+shows the number of paired seeds, exact seed set, estimator version, interval or “not enough
+evidence,” and unmatched or failed runs. T3RL refuses a protocol hash that does not match the
+declared sample IDs, decoding policy, dataset, split, and verifier identity.
+
+## Project-owned experiments
+
+Put versioned definitions in `.t3rl/experiments/<id>.json` and address them as `project__<id>`.
+Bundled definitions use `bundled__<id>`. Project definitions choose a server-supported adapter
+(`trl` or `axolotl`) and method; they cannot provide a process command or entrypoint.
+
+Each definition declares its model and tokenizer revisions, dataset, verifier, split policy,
+evaluation protocol, budgets, instrumentation, and runner configuration. Reproducible definitions
+must pin every external revision. Exploratory definitions may float, but validation reports a
+visible warning.
+
+Run `rl_validate_experiment` from the project agent before training. Validation reads the current
+definition, checks runner availability and budgets, rejects paths or symlinks outside the project,
+and reports hashes without modifying the environment. When training starts, local dataset, verifier,
+and definition files are copied into the run evidence and re-hashed. Later edits therefore cannot
+change an active or completed run.
+
+### SFT and DPO methods
+
+Set `method` to `sft` with `datasetFormat` `sft-text` or `sft-conversation`, and select the
+`held-out-loss` evaluation claim. Text rows contain `text`; conversational rows contain `prompt`
+and `completion`.
+
+Set `method` to `dpo` with `datasetFormat` `dpo-preference`, and select
+`preference-accuracy`. Every row must contain `prompt`, `chosen`, and `rejected`; equal or missing
+preference responses are rejected before model allocation. Training loss is shown as diagnostics,
+not treated as the evaluation claim.
+
+Runner availability is method-specific. SFT and DPO can be available on a CPU environment while
+GRPO still reports its CUDA requirement. A completed SFT adapter can be selected as the explicit
+warm-start input of a DPO experiment; this creates a new run with immutable lineage rather than
+changing the SFT run.

@@ -1,5 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off - hand-written worker stdout fixtures.
-import type { RlSubscriptionEvent } from "@t3tools/contracts";
+import type { RlArtifactMetadata, RlSubscriptionEvent } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -78,6 +78,7 @@ const capabilitiesLayer = Layer.succeed(
         runnerId: "fake",
         runnerVersion: "0.1.0",
         environmentFingerprint: "fake-fingerprint",
+        environmentLock: null,
       }),
   } satisfies CapabilitiesShape),
 );
@@ -421,7 +422,7 @@ describe("RlManager", () => {
     }),
   );
 
-  it.effect("coalesces a metric burst instead of queueing it", () =>
+  it.effect("rate-limits a metric burst without dropping durable steps", () =>
     Effect.gen(function* () {
       const worker = new FakeWorkerProcess();
       yield* withWorker(
@@ -448,13 +449,20 @@ describe("RlManager", () => {
           for (let step = 1; step <= 50; step += 1) {
             worker.emitStdout(metrics(step, step));
           }
-          yield* settle;
-          yield* TestClock.adjust("1 second");
+          // `done` is the protocol receipt that the sequential stdout pump has
+          // consumed the whole burst; it also flushes the one pending live batch.
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
           yield* Deferred.await(flushed);
 
-          // One flush window collapses the burst to its latest value.
+          // Live transport stays bounded, while a reconnect can replay every
+          // semantic step from durable storage.
           assert.strictEqual(received.length, 1);
           assert.strictEqual(received[0], 50);
+          const detail = yield* manager.get({ runId });
+          assert.deepStrictEqual(
+            detail.metrics.map((batch) => batch.step),
+            Array.from({ length: 50 }, (_, index) => index + 1),
+          );
         }),
       );
     }),
@@ -496,16 +504,18 @@ describe("RlManager", () => {
           yield* settle;
 
           const detail = yield* manager.get({ runId });
-          assert.deepStrictEqual(detail.metrics[0], {
-            step: 8,
-            wallClockMs: 120,
-            values: {
-              "train/reward": 0.5,
-              "system/num_tokens": 588,
-              "eval/reward": 0.875,
-              "eval/verifier_pass_rate": 0.875,
+          assert.deepStrictEqual(detail.metrics, [
+            {
+              step: 8,
+              wallClockMs: 100,
+              values: { "train/reward": 0.5, "system/num_tokens": 588 },
             },
-          });
+            {
+              step: 8,
+              wallClockMs: 120,
+              values: { "eval/reward": 0.875, "eval/verifier_pass_rate": 0.875 },
+            },
+          ]);
         }),
       );
     }),
@@ -548,6 +558,11 @@ describe("RlManager", () => {
 
           const detail = yield* manager.get({ runId });
           assert.deepStrictEqual(detail.metrics, [
+            {
+              step: 7,
+              wallClockMs: 100,
+              values: { "train/reward": 0.5 },
+            },
             {
               step: 8,
               wallClockMs: 120,
@@ -687,6 +702,125 @@ describe("RlManager", () => {
             (yield* manager.get({ runId })).summary.errorCode,
             "MalformedWorkerMessage",
           );
+        }).pipe(Effect.provide(NodeServices.layer)),
+      );
+    }),
+  );
+
+  it.effect("publishes a directory artifact with a server-computed identity", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          const spawn = worker.spawnInputs[0];
+          const runDirIndex = spawn?.args.indexOf("--run-dir") ?? -1;
+          const runDir = spawn?.args[runDirIndex + 1];
+          assert.isString(runDir);
+          yield* fs.makeDirectory(path.join(runDir!, "adapter", "nested"), { recursive: true });
+          yield* fs.writeFileString(path.join(runDir!, "adapter", "weights.bin"), "weights");
+          yield* fs.writeFileString(path.join(runDir!, "adapter", "nested", "config.json"), "{}");
+
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+          const published = yield* Deferred.make<RlArtifactMetadata>();
+          yield* manager.subscribe({ runId }, (event) => {
+            if (event._tag === "Artifact" && event.artifact.kind === "adapter") {
+              Deferred.doneUnsafe(published, Effect.succeed(event.artifact));
+            }
+          });
+          worker.emitStdout(
+            JSON.stringify({
+              type: "artifact",
+              kind: "adapter",
+              path: "adapter",
+              sha256: "0".repeat(64),
+            }),
+          );
+          const artifact = yield* Deferred.await(published);
+
+          assert.strictEqual(artifact.state, "ready");
+          assert.strictEqual(artifact.format, "directory-v1");
+          assert.strictEqual(artifact.fileCount, 2);
+          assert.strictEqual(artifact.logicalName, "adapter");
+          assert.match(artifact.sha256 ?? "", /^[0-9a-f]{64}$/);
+          assert.notStrictEqual(artifact.sha256, "0".repeat(64));
+          const defaultedPage = yield* manager.listArtifacts({ runId, limit: 0 });
+          assert.isAtLeast(defaultedPage.artifacts.length, 1);
+        }).pipe(Effect.provide(NodeServices.layer)),
+      );
+    }),
+  );
+
+  it.effect("keeps terminal state recording when the final log cannot be published", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          const spawn = worker.spawnInputs[0];
+          const runDirIndex = spawn?.args.indexOf("--run-dir") ?? -1;
+          const runDir = spawn?.args[runDirIndex + 1];
+          assert.isString(runDir);
+          yield* fs.makeDirectory(path.join(runDir!, "worker.log"));
+
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "running");
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
+
+          assert.strictEqual(yield* awaitTerminal(manager, runId), "completed");
+          assert.strictEqual((yield* manager.get({ runId })).summary.state, "completed");
+        }).pipe(Effect.provide(NodeServices.layer)),
+      );
+    }),
+  );
+
+  it.effect("fails explicitly when the resolved manifest artifact cannot be published", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { runId } = yield* manager.start({
+            projectId: "proj_01",
+            experimentId: "fake",
+            seed: 7,
+          });
+          const spawn = worker.spawnInputs[0];
+          const runDirIndex = spawn?.args.indexOf("--run-dir") ?? -1;
+          const runDir = spawn?.args[runDirIndex + 1];
+          assert.isString(runDir);
+          yield* fs.makeDirectory(path.join(runDir!, "manifest.json"));
+
+          emitReady(worker);
+          yield* awaitState(manager, runId, (state) => state === "failed");
+          worker.exit(1);
+          yield* settle;
+
+          const detail = yield* manager.get({ runId });
+          assert.strictEqual(detail.summary.state, "failed");
+          assert.strictEqual(detail.summary.errorCode, "RunnerException");
+          assert.include(detail.summary.errorMessage ?? "", "resolved manifest artifact");
         }).pipe(Effect.provide(NodeServices.layer)),
       );
     }),

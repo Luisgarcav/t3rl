@@ -1,11 +1,19 @@
 import {
   RlArtifactMetadata,
+  RlArtifactPage,
   RlCapabilityReport,
+  RlExperimentValidationReport,
   RlMetricBatch,
   RlResolvedManifest,
+  RlRunLineage,
   RlRunId,
   RlRunState,
   RlRunSummary,
+  RlStudy,
+  RlStudyComparison,
+  RlStudyDefinition,
+  RlStudyEstimator,
+  RL_MAX_ARTIFACT_PAGE_SIZE,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -99,6 +107,7 @@ export const RlRunInspection = Schema.Struct({
   summary: RlRunSummary,
   manifest: Schema.NullOr(RlResolvedManifest),
   artifacts: Schema.Array(RlArtifactMetadata),
+  lineage: RlRunLineage,
   metricBatchCount: NonNegativeInt,
   availableMetricKeys: Schema.Array(MetricKey),
   metricSummaries: Schema.Array(RlAgentMetricSummary),
@@ -163,6 +172,29 @@ export const RlGetRunTool = readonlyTool(
     failure: RlAgentToolError,
     dependencies,
   }).annotate(Tool.Title, "Inspect RL run"),
+);
+
+export const RlListArtifactsTool = readonlyTool(
+  Tool.make("rl_list_artifacts", {
+    description:
+      "List one bounded page of artifacts for a project-scoped RL run. Use nextCursor to continue through checkpoint-heavy runs without relying on the smaller rl_get_run snapshot.",
+    parameters: Schema.Struct({
+      runId: RunIdParameter,
+      cursor: Schema.optional(
+        Schema.String.annotate({ description: "Opaque artifact cursor from the previous page." })
+          .check(Schema.isTrimmed())
+          .check(Schema.isNonEmpty())
+          .check(Schema.isMaxLength(64)),
+      ),
+      limit: PositiveLimit(
+        RL_MAX_ARTIFACT_PAGE_SIZE,
+        `Maximum artifacts to return. Defaults to 50; maximum ${RL_MAX_ARTIFACT_PAGE_SIZE}.`,
+      ),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, runId: RlRunId, page: RlArtifactPage }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "List RL artifacts"),
 );
 
 export const RlQueryMetricsTool = readonlyTool(
@@ -288,13 +320,135 @@ export const RlCancelRunTool = actionTool(
   }).annotate(Tool.Title, "Cancel RL run"),
 );
 
+export const RlCreateStudyTool = actionTool(
+  Tool.make("rl_create_study", {
+    description:
+      "Create and schedule a project-scoped multi-seed A/B study with bounded concurrency and one immutable evaluation protocol.",
+    parameters: Schema.Struct({
+      definition: RlStudyDefinition.annotate({
+        description:
+          "Immutable variants, four-role seed sets, run budget, concurrency, and evaluation protocol.",
+      }),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, study: RlStudy }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Create RL study"),
+);
+
+export const RlValidateExperimentTool = readonlyTool(
+  Tool.make("rl_validate_experiment", {
+    description:
+      "Validate a project-owned experiment and its model, dataset, verifier, capacity, and budget without starting a worker or installing dependencies.",
+    parameters: Schema.Struct({
+      experimentId: IdentifierParameter(
+        "Project experiment ID, normally namespaced as project__<id>.",
+      ),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, report: RlExperimentValidationReport }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Validate project RL experiment"),
+);
+
+export const RlGetStudyTool = readonlyTool(
+  Tool.make("rl_get_study", {
+    description:
+      "Inspect a project-scoped study, including its seed set and queued, running, failed, unmatched, or completed members.",
+    parameters: Schema.Struct({
+      studyId: IdentifierParameter("Study ID returned by rl_create_study."),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, study: RlStudy }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Inspect RL study"),
+);
+
+export const RlCompareStudyTool = readonlyTool(
+  Tool.make("rl_compare_study", {
+    description:
+      "Compute the server-owned, versioned paired comparison for two variants in a study. Reports N, seeds, dispersion, interval, unmatched and failed runs, or not-enough-evidence.",
+    parameters: Schema.Struct({
+      studyId: IdentifierParameter("Study ID returned by rl_create_study."),
+      baselineLabel: IdentifierParameter("Baseline variant label."),
+      candidateLabel: IdentifierParameter("Candidate variant label."),
+      metricKey: MetricKey,
+      estimator: RlStudyEstimator.annotate({
+        description:
+          "Versioned statistic, confidence level, bootstrap seed/count, statistical unit, and missing-pair policy.",
+      }),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, comparison: RlStudyComparison }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Compare RL study"),
+);
+
+const ContinueRunParameters = Schema.Struct({
+  parentRunId: IdentifierParameter("Terminal parent run ID from rl_get_run."),
+  sourceArtifactId: IdentifierParameter(
+    "Verified checkpoint or adapter artifact ID returned by rl_get_run or rl_list_artifacts.",
+  ),
+  requestId: IdentifierParameter(
+    "Stable idempotency key for this intended child run. Reuse it only to retry the same request.",
+  ),
+});
+
+const WarmStartRunParameters = Schema.Struct({
+  ...ContinueRunParameters.fields,
+  targetExperimentId: Schema.optional(
+    IdentifierParameter(
+      "Optional target experiment. Use this to make an SFT adapter the explicit input to a DPO run.",
+    ),
+  ),
+});
+
+export const RlResumeRunTool = actionTool(
+  Tool.make("rl_resume_run", {
+    description:
+      "Create a new child run that exactly resumes a terminal parent from a verified, complete trainer checkpoint. The server refuses missing state or compatibility drift; it never mutates the parent.",
+    parameters: ContinueRunParameters,
+    success: Schema.Struct({
+      ...ProjectContext.fields,
+      parentRunId: RlRunId,
+      runId: RlRunId,
+      relation: Schema.Literals(["resume"]),
+    }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Resume RL run from checkpoint"),
+);
+
+export const RlWarmStartRunTool = actionTool(
+  Tool.make("rl_warm_start_run", {
+    description:
+      "Create a new child run initialized from a verified deployable PEFT adapter. This is an explicit warm start, not an exact trainer resume, and the parent remains immutable.",
+    parameters: WarmStartRunParameters,
+    success: Schema.Struct({
+      ...ProjectContext.fields,
+      parentRunId: RlRunId,
+      runId: RlRunId,
+      relation: Schema.Literals(["warm-start"]),
+    }),
+    failure: RlAgentToolError,
+    dependencies,
+  }).annotate(Tool.Title, "Warm-start RL run from adapter"),
+);
+
 export const RlToolkit = Toolkit.make(
   RlCapabilitiesTool,
   RlListRunsTool,
   RlGetRunTool,
+  RlListArtifactsTool,
   RlQueryMetricsTool,
   RlCompareRunsTool,
   RlReadArtifactTool,
   RlStartRunTool,
+  RlResumeRunTool,
+  RlWarmStartRunTool,
   RlCancelRunTool,
+  RlCreateStudyTool,
+  RlGetStudyTool,
+  RlCompareStudyTool,
+  RlValidateExperimentTool,
 );

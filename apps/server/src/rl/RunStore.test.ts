@@ -12,9 +12,102 @@ const testLayer = RunStoreLive.pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
+it.effect("persists immutable studies and member state independently of arrival order", () =>
+  Effect.gen(function* () {
+    const store = yield* RunStore;
+    const seeds = { training: 7, data: 8, evaluationSample: 9, generation: 10 };
+    const protocolSha256 = "a".repeat(64);
+    yield* store.createStudy({
+      studyId: "study_test",
+      projectId: "project-1",
+      state: "requested",
+      definition: {
+        variants: [
+          { label: "baseline", experimentId: "exp-a" },
+          { label: "candidate", experimentId: "exp-b" },
+        ],
+        seeds: [seeds, { ...seeds, training: 11 }],
+        maxConcurrency: 2,
+        maxRuns: 4,
+        evaluationProtocol: {
+          version: 1,
+          protocolSha256,
+          datasetFingerprint: "dataset-v1",
+          split: "test",
+          sampleIds: ["sample-1"],
+          generationSeedPolicy: "fixed-per-sample",
+          decoding: {},
+          verifierSha256: "b".repeat(64),
+        },
+      },
+      protocolSha256,
+      createdAt: "2026-09-04T00:00:00.000Z",
+      updatedAt: "2026-09-04T00:00:00.000Z",
+      runs: [
+        { variantLabel: "candidate", seeds, runId: null, state: "queued" },
+        { variantLabel: "baseline", seeds, runId: null, state: "queued" },
+        {
+          variantLabel: "candidate",
+          seeds: { ...seeds, training: 11 },
+          runId: null,
+          state: "queued",
+        },
+        {
+          variantLabel: "baseline",
+          seeds: { ...seeds, training: 11 },
+          runId: null,
+          state: "queued",
+        },
+      ],
+    });
+    yield* store.updateStudyRun({
+      studyId: "study_test",
+      variantLabel: "baseline",
+      trainingSeed: 7,
+      runId: "run_1",
+      state: "running",
+      studyState: "running",
+      at: "2026-09-04T00:01:00.000Z",
+    });
+    const stored = yield* store.getStudy({ studyId: "study_test" });
+    assert.equal(stored.state, "running");
+    assert.equal(
+      stored.runs.find((run) => run.variantLabel === "baseline" && run.seeds.training === 7)?.runId,
+      "run_1",
+    );
+    assert.deepEqual(stored.definition.evaluationProtocol.sampleIds, ["sample-1"]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 const runStoreLayer = it.layer(testLayer);
 
 const requestedAt = "2026-08-24T00:00:00.000Z";
+
+const compatibility = {
+  model: {
+    baseModelId: "test/tiny",
+    baseModelRevision: "a".repeat(40),
+    tokenizerRevision: "b".repeat(40),
+    peftConfig: {
+      peftType: "LORA" as const,
+      taskType: "CAUSAL_LM",
+      rank: 2,
+      alpha: 4,
+      dropout: 0,
+      bias: "none" as const,
+      targetModules: ["linear"],
+      modulesToSave: [],
+      useRslora: false,
+    },
+    peftConfigSha256: "c".repeat(64),
+    quantization: "none" as const,
+    precision: "fp32" as const,
+    trainableModules: ["linear"],
+  },
+  framework: { id: "fake", version: "0.1.0" },
+  environmentFingerprint: "fixture",
+  environmentLockSha256: null,
+};
 
 runStoreLayer("RunStore", (it) => {
   it.effect("round trips a requested run into a listing", () =>
@@ -210,13 +303,232 @@ runStoreLayer("RunStore", (it) => {
         bytes: 42,
         contentType: "application/json",
         producedAt: requestedAt,
+        sha256: "a".repeat(64),
+        logicalName: "summary.json",
+        format: "json",
+        fileCount: 1,
+        contentManifest: [{ path: "summary.json", bytes: 42, sha256: "a".repeat(64) }],
       });
       assert.isTrue(artifact.artifactId.length > 0);
       assert.isFalse(artifact.artifactId.includes("/"));
 
-      const artifacts = yield* store.listArtifacts({ runId: "run_06" });
-      assert.strictEqual(artifacts.length, 1);
-      assert.strictEqual(artifacts[0]?.kind, "summary");
+      const page = yield* store.listArtifacts({ runId: "run_06", limit: 10 });
+      assert.strictEqual(page.artifacts.length, 1);
+      assert.strictEqual(page.artifacts[0]?.kind, "summary");
+      assert.strictEqual(page.artifacts[0]?.sha256, "a".repeat(64));
+      assert.strictEqual(page.artifacts[0]?.state, "ready");
+      assert.strictEqual(page.nextCursor, null);
+    }),
+  );
+
+  it.effect("paginates artifacts deterministically when timestamps are equal", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* store.insertRequested({
+        runId: "run_artifact_pages",
+        projectId: "proj_01",
+        experimentId: "fake",
+        requestedAt,
+      });
+      const recorded = [];
+      for (const name of ["one.json", "two.json", "three.json"]) {
+        recorded.push(
+          yield* store.recordArtifact({
+            runId: "run_artifact_pages",
+            kind: "summary",
+            relativePath: name,
+            bytes: 2,
+            contentType: "application/json",
+            producedAt: requestedAt,
+            sha256: "b".repeat(64),
+            logicalName: name,
+            format: "json",
+            fileCount: 1,
+            contentManifest: [{ path: name, bytes: 2, sha256: "b".repeat(64) }],
+          }),
+        );
+      }
+
+      const expectedIds = recorded
+        .map((artifact) => artifact.artifactId)
+        .sort()
+        .toReversed();
+      const first = yield* store.listArtifacts({ runId: "run_artifact_pages", limit: 2 });
+      assert.deepStrictEqual(
+        first.artifacts.map((artifact) => artifact.artifactId),
+        expectedIds.slice(0, 2),
+      );
+      assert.strictEqual(first.nextCursor, expectedIds[1]);
+
+      const second = yield* store.listArtifacts({
+        runId: "run_artifact_pages",
+        limit: 2,
+        cursor: first.nextCursor!,
+      });
+      assert.deepStrictEqual(
+        second.artifacts.map((artifact) => artifact.artifactId),
+        expectedIds.slice(2),
+      );
+      assert.strictEqual(second.nextCursor, null);
+    }),
+  );
+
+  it.effect("reads pre-identity artifact rows as legacy evidence", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const sql = yield* SqlClient.SqlClient;
+      yield* store.insertRequested({
+        runId: "run_legacy_artifact",
+        projectId: "proj_01",
+        experimentId: "fake",
+        requestedAt,
+      });
+      yield* sql`
+        INSERT INTO rl_run_artifacts
+          (artifact_id, run_id, kind, relative_path, bytes, content_type, produced_at)
+        VALUES (
+          'artifact_legacy',
+          'run_legacy_artifact',
+          'summary',
+          'summary.json',
+          42,
+          'application/json',
+          ${requestedAt}
+        )
+      `;
+
+      const page = yield* store.listArtifacts({ runId: "run_legacy_artifact", limit: 10 });
+      assert.deepInclude(page.artifacts[0], {
+        artifactId: "artifact_legacy",
+        sha256: null,
+        logicalName: "summary.json",
+        format: "unknown",
+        state: "ready",
+        fileCount: 0,
+      });
+    }),
+  );
+
+  it.effect("round trips checkpoint evidence and updates retention state", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* store.insertRequested({
+        runId: "run_checkpoint_evidence",
+        projectId: "proj_01",
+        experimentId: "fake",
+        requestedAt,
+      });
+      const artifact = yield* store.recordArtifact({
+        runId: "run_checkpoint_evidence",
+        kind: "checkpoint",
+        relativePath: "checkpoints/checkpoint-4-intermediate",
+        bytes: 42,
+        contentType: "application/vnd.t3rl.directory.v1",
+        producedAt: requestedAt,
+        sha256: "d".repeat(64),
+        logicalName: "checkpoints/checkpoint-4-intermediate",
+        format: "directory-v1",
+        checkpointStep: 4,
+        fileCount: 7,
+        contentManifest: [],
+        evidence: {
+          _tag: "Checkpoint",
+          checkpointClass: "intermediate",
+          compatibility,
+          globalStep: 4,
+          tokensSeen: 64,
+          datasetCursor: { epoch: 0.5, batchInEpoch: 4, sampleOffset: 4 },
+          resumeState: {
+            trainerState: true,
+            optimizerState: true,
+            schedulerState: true,
+            rngState: true,
+            datasetCursorState: true,
+            gradientScalerState: "not-applicable",
+            stateFiles: [
+              "trainer_state.json",
+              "optimizer.pt",
+              "scheduler.pt",
+              "rng_state.pth",
+              "t3rl-dataset-cursor.json",
+            ],
+          },
+        },
+      });
+
+      const found = yield* store.findArtifact({
+        runId: "run_checkpoint_evidence",
+        artifactId: artifact.artifactId,
+      });
+      assert.strictEqual(found?.metadata.evidence?._tag, "Checkpoint");
+      assert.strictEqual(found?.metadata.checkpointStep, 4);
+      assert.strictEqual(
+        (yield* store.listReadyIntermediateCheckpoints({ runId: "run_checkpoint_evidence" }))
+          .length,
+        1,
+      );
+      const trashed = yield* store.setArtifactState({
+        artifactId: artifact.artifactId,
+        state: "trashed",
+      });
+      assert.strictEqual(trashed?.state, "trashed");
+      assert.strictEqual(
+        (yield* store.listReadyIntermediateCheckpoints({ runId: "run_checkpoint_evidence" }))
+          .length,
+        0,
+      );
+    }),
+  );
+
+  it.effect("stores and returns a bounded nearest-parent-first lineage chain", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* store.insertRequested({
+        runId: "run_lineage_root",
+        projectId: "proj_lineage",
+        experimentId: "fake",
+        requestedAt,
+      });
+      yield* store.insertRequested({
+        runId: "run_lineage_child",
+        projectId: "proj_lineage",
+        experimentId: "fake",
+        requestedAt,
+        lineage: {
+          childRunId: "run_lineage_child",
+          parentRunId: "run_lineage_root",
+          sourceArtifactId: "artifact_root",
+          sourceArtifactSha256: "e".repeat(64),
+          relation: "resume",
+          sourceStep: 4,
+          createdAt: requestedAt,
+        },
+      });
+      yield* store.insertRequested({
+        runId: "run_lineage_grandchild",
+        projectId: "proj_lineage",
+        experimentId: "fake",
+        requestedAt,
+        lineage: {
+          childRunId: "run_lineage_grandchild",
+          parentRunId: "run_lineage_child",
+          sourceArtifactId: "artifact_child",
+          sourceArtifactSha256: "f".repeat(64),
+          relation: "warm-start",
+          sourceStep: 8,
+          createdAt: requestedAt,
+        },
+      });
+
+      const lineage = yield* store.getLineage({ runId: "run_lineage_grandchild" });
+      assert.deepStrictEqual(
+        lineage.edges.map((edge) => [edge.childRunId, edge.parentRunId, edge.relation]),
+        [
+          ["run_lineage_grandchild", "run_lineage_child", "warm-start"],
+          ["run_lineage_child", "run_lineage_root", "resume"],
+        ],
+      );
+      assert.isFalse(lineage.truncated);
     }),
   );
 });

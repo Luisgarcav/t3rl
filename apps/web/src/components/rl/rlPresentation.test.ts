@@ -2,10 +2,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   formatRlDuration,
+  formatRlArtifactIdentity,
   formatRlMetricValue,
   isLlmPostTrainingRunner,
   latestRlMetricValue,
   LLM_POST_TRAINING_METRIC_DEFINITIONS,
+  mergeRlArtifactInventory,
   rlMetricDefinitionsForRunner,
   rlStatusVariant,
   selectRlMetricPoints,
@@ -70,5 +72,43 @@ describe("RL presentation", () => {
         Date.parse("2026-08-25T15:00:00Z"),
       ),
     ).toBe("2h 03m");
+  });
+
+  it("distinguishes verified artifacts from legacy evidence", () => {
+    const artifact = {
+      artifactId: "artifact_01",
+      kind: "summary" as const,
+      bytes: 42,
+      contentType: "application/json",
+      producedAt: "2026-09-04T00:00:00.000Z",
+    };
+    expect(formatRlArtifactIdentity(artifact)).toBe("Legacy · unverified");
+    expect(
+      formatRlArtifactIdentity({
+        ...artifact,
+        sha256: "a".repeat(64),
+        state: "ready",
+      }),
+    ).toBe("ready · sha256:aaaaaaaaaaaa");
+  });
+
+  it("merges live artifacts into a bounded newest-first inventory page", () => {
+    const artifact = (artifactId: string, producedAt: string) => ({
+      artifactId,
+      kind: "summary" as const,
+      bytes: 2,
+      contentType: "application/json",
+      producedAt,
+    });
+    expect(
+      mergeRlArtifactInventory(
+        [artifact("old", "2026-09-04T00:00:00.000Z")],
+        [artifact("old", "2026-09-04T00:00:00.000Z"), artifact("live", "2026-09-04T00:00:01.000Z")],
+        2,
+      ).map((entry) => entry.artifactId),
+    ).toEqual(["live", "old"]);
+    expect(
+      mergeRlArtifactInventory([], [artifact("live", "2026-09-04T00:00:01.000Z")], -1),
+    ).toEqual([]);
   });
 });

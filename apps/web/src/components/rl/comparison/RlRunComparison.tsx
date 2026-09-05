@@ -2,7 +2,13 @@
 
 import { useAtomValue } from "@effect/atom-react";
 import type { RlRunProjection } from "@t3tools/client-runtime/state/rl";
-import type { EnvironmentId, RlExperimentId, RlRunId, RlRunSummary } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  RlExperimentId,
+  RlRunId,
+  RlRunSummary,
+  RlStudyComparison,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { AlertTriangleIcon, BarChart3Icon, InfoIcon } from "lucide-react";
@@ -11,11 +17,14 @@ import { useState } from "react";
 import { cn } from "~/lib/utils";
 import { formatEnvironmentQueryError } from "~/state/query";
 import { rlEnvironment } from "~/state/rl";
+import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Alert, AlertDescription, AlertTitle } from "../../ui/alert";
 import { Badge } from "../../ui/badge";
+import { Button } from "../../ui/button";
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from "../../ui/card";
 import { Checkbox } from "../../ui/checkbox";
+import { Input } from "../../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../../ui/select";
 import { Skeleton } from "../../ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
@@ -351,6 +360,12 @@ export function RlRunComparison({
   const [metricOverride, setMetricOverride] = useState<string | null>(null);
   const [centerStatistic, setCenterStatistic] = useState<RlCenterStatistic>("mean");
   const [bandStatistic, setBandStatistic] = useState<RlBandStatistic>("range");
+  const [studyId, setStudyId] = useState("");
+  const [baselineLabel, setBaselineLabel] = useState("baseline");
+  const [candidateLabel, setCandidateLabel] = useState("candidate");
+  const [studyComparison, setStudyComparison] = useState<RlStudyComparison | null>(null);
+  const [studyError, setStudyError] = useState<string | null>(null);
+  const compareStudy = useAtomCommand(rlEnvironment.compareStudy, { reportFailure: false });
   const effectiveLimit = normalizeSelectionLimit(maxSelectedRuns);
   const preferredExperiment =
     defaultExperimentId !== null && experimentIds.includes(defaultExperimentId)
@@ -425,6 +440,30 @@ export function RlRunComparison({
     }));
   };
 
+  const runStudyComparison = async () => {
+    setStudyError(null);
+    const result = await compareStudy({
+      environmentId,
+      input: {
+        studyId,
+        baselineLabel,
+        candidateLabel,
+        metricKey: selectedMetric.key,
+        estimator: {
+          version: 1,
+          statistic: "paired-mean-delta",
+          statisticalUnit: "paired-sample-within-run-seed",
+          confidenceLevel: 0.95,
+          resamplingSeed: 17,
+          resampleCount: 10_000,
+          missingPairPolicy: "exclude",
+        },
+      },
+    });
+    if (result._tag === "Success") setStudyComparison(result.value);
+    else setStudyError("The study could not be compared in this environment.");
+  };
+
   if (selectedExperimentId === null) {
     return (
       <Card className={cn("overflow-hidden", className)}>
@@ -457,6 +496,58 @@ export function RlRunComparison({
       </CardHeader>
 
       <CardPanel className="space-y-6 p-4 sm:p-6">
+        <section className="space-y-3 rounded-xl border p-4">
+          <div>
+            <div className="text-sm font-medium">Authoritative paired study</div>
+            <div className="text-xs text-muted-foreground">
+              Server-computed hierarchical bootstrap with explicit N, seeds, failures, and interval.
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Input
+              aria-label="Study ID"
+              placeholder="study_…"
+              value={studyId}
+              onChange={(event) => setStudyId(event.currentTarget.value)}
+            />
+            <Input
+              aria-label="Baseline label"
+              value={baselineLabel}
+              onChange={(event) => setBaselineLabel(event.currentTarget.value)}
+            />
+            <Input
+              aria-label="Candidate label"
+              value={candidateLabel}
+              onChange={(event) => setCandidateLabel(event.currentTarget.value)}
+            />
+          </div>
+          <Button disabled={studyId.trim().length === 0} size="sm" onClick={runStudyComparison}>
+            Compare study
+          </Button>
+          {studyError !== null ? <p className="text-xs text-destructive">{studyError}</p> : null}
+          {studyComparison !== null ? (
+            <div className="grid gap-2 text-xs sm:grid-cols-3">
+              <span>N {studyComparison.n}</span>
+              <span>Seeds {studyComparison.seedSet.join(", ") || "none"}</span>
+              <span>Method hierarchical bootstrap v{studyComparison.estimator.version}</span>
+              <span>
+                Delta{" "}
+                {studyComparison.pairedDelta === null
+                  ? "—"
+                  : formatRlMetricValue(studyComparison.pairedDelta)}
+              </span>
+              <span>
+                Interval{" "}
+                {studyComparison.interval === null
+                  ? "not enough evidence"
+                  : `${formatRlMetricValue(studyComparison.interval[0])}–${formatRlMetricValue(studyComparison.interval[1])}`}
+              </span>
+              <span>
+                {studyComparison.unmatchedRuns} unmatched · {studyComparison.failedRuns} failed
+              </span>
+            </div>
+          ) : null}
+        </section>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <label className="space-y-1.5">
             <span className="text-sm font-medium">Experiment</span>

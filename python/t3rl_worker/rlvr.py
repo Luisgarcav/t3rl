@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Backend-agnostic RLVR primitives shared by the t3RL post-training workers.
 
 The worker protocol, the verifier, the versioned dataset, the split policy, and
@@ -14,18 +13,20 @@ every runner environment regardless of which framework that environment pins.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 SUPPORTED_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -47,14 +48,18 @@ SUPPORTED_DATASETS = frozenset({SUPPORTED_DATASET, SUPPORTED_DATASET_V2})
 
 DATASET_PATHS = {
     SUPPORTED_DATASET: Path(__file__).parent / "datasets" / "arithmetic-rlvr-v1.json",
-    SUPPORTED_DATASET_V2: Path(__file__).parent / "datasets" / "arithmetic-rlvr-v2.json",
+    SUPPORTED_DATASET_V2: Path(__file__).parent
+    / "datasets"
+    / "arithmetic-rlvr-v2.json",
 }
 
 
 VERIFIER_ID = "exact-integer-v2"
 
 
-INTEGER_PATTERN = re.compile(r"(?<![\w.+-])[+-]?\d[\d,]*(?![\w.+-])")
+INTEGER_PATTERN = re.compile(
+    r"(?<![\w.,+\-/])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?![\w+\-/]|[.,]\d)"
+)
 
 
 EMIT_LOCK = threading.Lock()
@@ -78,17 +83,23 @@ def run_metrics_heartbeat(
     step: Callable[[], int],
     gpu_count: Callable[[], int],
 ) -> None:
-    """Keep the worker watchdog alive while a backend performs blocking work."""
+    """Keep protocol-v2 liveness and resource samples out of training metrics."""
     while not stop.wait(15):
+        current_step = step()
+        wall_clock_ms = int((time.monotonic() - started) * 1000)
         emit(
             {
-                "type": "metrics",
-                "step": step(),
-                "wallClockMs": int((time.monotonic() - started) * 1000),
-                "values": {
-                    "system/heartbeat": 1.0,
-                    "system/gpu_count": float(gpu_count()),
-                },
+                "type": "heartbeat",
+                "step": current_step,
+                "wallClockMs": wall_clock_ms,
+            }
+        )
+        emit(
+            {
+                "type": "resource",
+                "step": current_step,
+                "wallClockMs": wall_clock_ms,
+                "values": {"system/gpu_count": float(gpu_count())},
             }
         )
 
@@ -183,8 +194,55 @@ def load_builtin_dataset(dataset_id: str) -> tuple[list[dict[str, str]], str]:
         normalized = extract_final_integer(answer)
         if normalized is None or normalized != answer:
             raise ValueError(f"dataset row {index} answer must be a canonical integer")
-        records.append({"prompt": prompt, "answer": answer})
+        sample_digest = hashlib.sha256(
+            f"{dataset_id}\0{index}\0{prompt}\0{answer}".encode()
+        ).hexdigest()
+        records.append(
+            {
+                "sampleId": f"sample_{sample_digest[:24]}",
+                "prompt": prompt,
+                "answer": answer,
+            }
+        )
     return records, hashlib.sha256(payload).hexdigest()
+
+
+def load_project_dataset(dataset_path: str) -> tuple[list[dict[str, str]], str]:
+    """Load only the immutable server snapshot, never a project-live path."""
+    path = Path(dataset_path)
+    payload = path.read_bytes()
+    if path.suffix == ".jsonl":
+        decoded = [json.loads(line) for line in payload.decode().splitlines() if line.strip()]
+    else:
+        decoded = json.loads(payload)
+    if not isinstance(decoded, list) or not decoded:
+        raise ValueError("project dataset must be a non-empty JSON array or JSONL file")
+    records: list[dict[str, str]] = []
+    for index, value in enumerate(decoded):
+        if not isinstance(value, dict):
+            raise TypeError(f"project dataset row {index} must be an object")
+        prompt = _string(f"project dataset row {index} prompt", value.get("prompt"), 4096)
+        answer = _string(f"project dataset row {index} answer", value.get("answer"), 1024)
+        sample_id = value.get("sampleId")
+        if not isinstance(sample_id, str) or not sample_id:
+            sample_id = "sample_" + hashlib.sha256(
+                f"{index}\0{prompt}\0{answer}".encode()
+            ).hexdigest()[:24]
+        records.append({"sampleId": sample_id, "prompt": prompt, "answer": answer})
+    return records, hashlib.sha256(payload).hexdigest()
+
+
+def load_project_verifier(verifier_path: str) -> Callable[[str, str], bool]:
+    """Import verifier code only in the Python worker from its immutable snapshot."""
+    spec = importlib.util.spec_from_file_location("t3rl_project_verifier", verifier_path)
+    if spec is None or spec.loader is None:
+        raise ValueError("project verifier could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    verify = getattr(module, "verify", None)
+    if not callable(verify):
+        raise ValueError("project verifier must export verify(completion, expected)")
+    return verify
 
 
 def split_dataset(
@@ -201,13 +259,17 @@ EVIDENCE_PHASES = ("evaluation-before", "training", "evaluation-after")
 
 
 def order_replay_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Order retained evidence by the phases' actual execution order."""
-    return [
-        sample
-        for phase in EVIDENCE_PHASES
-        for sample in samples
-        if sample.get("phase") == phase
-    ]
+    """Order retained evidence deterministically in actual phase order."""
+    phase_order = {phase: index for index, phase in enumerate(EVIDENCE_PHASES)}
+    return sorted(
+        samples,
+        key=lambda sample: (
+            phase_order.get(str(sample.get("phase")), len(EVIDENCE_PHASES)),
+            str(sample.get("sampleId", "")),
+            int(sample.get("generationIndex", 0)),
+            str(sample.get("completion", "")),
+        ),
+    )
 
 
 class EvidenceLedger:
@@ -224,11 +286,25 @@ class EvidenceLedger:
         self._phase_retain_limit = max(1, retain_limit // len(EVIDENCE_PHASES))
         self._samples: list[dict[str, Any]] = []
         self._totals: dict[str, dict[str, float]] = {}
+        self._generation_counts: dict[tuple[str, str], int] = {}
+
+    def next_generation_index(self, phase: str, sample_id: str) -> int:
+        """Allocate a stable per-phase generation index across callback invocations."""
+        key = (phase, sample_id)
+        generation_index = self._generation_counts.get(key, 0)
+        self._generation_counts[key] = generation_index + 1
+        return generation_index
 
     def _phase_totals(self, phase: str) -> dict[str, float]:
         return self._totals.setdefault(
             phase,
-            {"count": 0.0, "passed": 0.0, "sum": 0.0, "squareSum": 0.0, "retained": 0.0},
+            {
+                "count": 0.0,
+                "passed": 0.0,
+                "sum": 0.0,
+                "squareSum": 0.0,
+                "retained": 0.0,
+            },
         )
 
     def record(
@@ -240,6 +316,8 @@ class EvidenceLedger:
         completion: str,
         parsed: str | None,
         reward: float,
+        sample_id: str,
+        generation_index: int,
     ) -> None:
         totals = self._phase_totals(phase)
         totals["count"] += 1.0
@@ -251,6 +329,8 @@ class EvidenceLedger:
         totals["retained"] += 1.0
         self._samples.append(
             {
+                "sampleId": sample_id,
+                "generationIndex": generation_index,
                 "phase": phase,
                 "prompt": prompt,
                 "expected": expected,
@@ -296,9 +376,7 @@ class EvidenceLedger:
         }
 
 
-def resolve_evidence_phase(
-    requested_phase: str | None, trainer_state: Any
-) -> str:
+def resolve_evidence_phase(requested_phase: str | None, trainer_state: Any) -> str:
     if requested_phase != "evaluation":
         return "training"
     if int(getattr(trainer_state, "global_step", 0)) == 0:
@@ -307,7 +385,9 @@ def resolve_evidence_phase(
 
 
 def make_exact_integer_reward(
-    ledger: EvidenceLedger, phase_resolver: Callable[[str], str] | None = None
+    ledger: EvidenceLedger,
+    phase_resolver: Callable[[str], str] | None = None,
+    verifier: Callable[[str, str], bool] | None = None,
 ) -> Callable[..., list[float]]:
     """
     Builds the verifier reward function.
@@ -317,11 +397,13 @@ def make_exact_integer_reward(
     it inferred, which keeps the evidence labels correct instead of silently
     collapsing both evaluations into one phase.
     """
+
     def exact_integer_reward(
         completions: list[Any],
         answer: list[str],
         prompts: list[Any] | None = None,
         evidencePhase: list[str] | None = None,
+        sampleId: list[str] | None = None,
         trainer_state: Any = None,
         **_: Any,
     ) -> list[float]:
@@ -331,7 +413,8 @@ def make_exact_integer_reward(
         for index, (completion, expected) in enumerate(zip(completions, answer)):
             text = completion_text(completion)
             parsed = extract_final_integer(text)
-            reward = 1.0 if parsed == expected else 0.0
+            passed = verifier(text, expected) if verifier is not None else parsed == expected
+            reward = 1.0 if passed else 0.0
             rewards.append(reward)
             prompt = (
                 prompts[index] if prompts is not None and index < len(prompts) else ""
@@ -341,28 +424,69 @@ def make_exact_integer_reward(
                 if evidencePhase is not None and index < len(evidencePhase)
                 else "training"
             )
+            stable_id = (
+                sampleId[index]
+                if sampleId is not None
+                and index < len(sampleId)
+                and isinstance(sampleId[index], str)
+                and sampleId[index]
+                else "sample_"
+                + hashlib.sha256(
+                    f"{completion_text(prompt)}\0{expected}".encode()
+                ).hexdigest()[:24]
+            )
+            resolved_phase = (
+                phase_resolver(requested_phase)
+                if phase_resolver is not None
+                else resolve_evidence_phase(requested_phase, trainer_state)
+            )
+            generation_index = ledger.next_generation_index(resolved_phase, stable_id)
             ledger.record(
-                phase=(
-                    phase_resolver(requested_phase)
-                    if phase_resolver is not None
-                    else resolve_evidence_phase(requested_phase, trainer_state)
-                ),
+                phase=resolved_phase,
                 prompt=completion_text(prompt),
                 expected=expected,
                 completion=text,
                 parsed=parsed,
                 reward=reward,
+                sample_id=stable_id,
+                generation_index=generation_index,
             )
         return rewards
 
     return exact_integer_reward
 
 
+def atomic_write_bytes(target: str | Path, payload: bytes) -> None:
+    """Publish one complete file through a same-directory atomic rename."""
+    destination = Path(target)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def write_json(run_dir: str, relative_path: str, value: Any) -> None:
-    target = os.path.join(run_dir, relative_path)
-    os.makedirs(os.path.dirname(target) or run_dir, exist_ok=True)
-    with open(target, "w", encoding="utf-8") as handle:
-        json.dump(value, handle, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    payload = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode()
+    atomic_write_bytes(Path(run_dir) / relative_path, payload)
 
 
 def metric_value(logs: dict[str, Any], *keys: str) -> float | str | None:

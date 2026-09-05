@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-04T19:07:26.584Z",
+  "fixture": {
+    "semanticMetricBatches": 5000,
+    "incomingBatchesPerSecond": 50,
+    "liveBatchLimitPerSecond": 2,
+    "artifactCount": 3
+  },
+  "referenceHardware": {
+    "platform": "Linux 7.2.2-arch1-1",
+    "architecture": "x86_64",
+    "cpuModel": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+    "logicalCpuCount": 16,
+    "totalMemoryBytes": 16007938048,
+    "nodeVersion": "v24.20.0"
+  },
+  "measurements": {
+    "wallClockMs": 71.707,
+    "cpuUserMs": 36.611,
+    "cpuSystemMs": 30.918,
+    "rssStartBytes": 189566976,
+    "rssEndBytes": 193499136,
+    "rssPeakBytes": 193499136,
+    "sqliteWriteStatements": 5000,
+    "sqliteBytes": 5000696,
+    "websocketBytes": 35011,
+    "artifactBytes": 331776,
+    "renderer": {
+      "reducerEvents": 201,
+      "chartPointVisits": 16860
+    }
+  },
+  "checks": {
+    "persistedMetricRows": 5000,
+    "persistedDistinctSteps": 5000,
+    "publishedMetricBatches": 200,
+    "semanticStepsPreserved": true,
+    "transportBounded": true
+  }
+}

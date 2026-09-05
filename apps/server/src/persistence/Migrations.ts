@@ -55,6 +55,9 @@ import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMo
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_RlRuns.ts";
 import Migration0042 from "./Migrations/042_RlRunRequestId.ts";
+import Migration0043 from "./Migrations/043_RlArtifactIdentity.ts";
+import Migration0044 from "./Migrations/044_RlCheckpointLineage.ts";
+import Migration0045 from "./Migrations/045_RlStudies.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -109,6 +112,9 @@ export const migrationEntries = [
   [40, "ProjectionProjectFaviconPath", Migration0040],
   [41, "RlRuns", Migration0041],
   [42, "RlRunRequestId", Migration0042],
+  [43, "RlArtifactIdentity", Migration0043],
+  [44, "RlCheckpointLineage", Migration0044],
+  [45, "RlStudies", Migration0045],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

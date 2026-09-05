@@ -1,0 +1,10 @@
+{
+  "fixture": "20 passes over 10000 DPO JSONL records",
+  "elapsedMs": 106.55054299999999,
+  "rssDeltaBytes": 22667264,
+  "websocketBytesPerMetricBatch": 76,
+  "sqliteWritesAddedByMethodAdapter": 0,
+  "artifactGrowthBytes": 0,
+  "rendererObjectsPerBatch": 1,
+  "digest": "fd4c7d687ab596d4d490f660e9f44caa8a14dea6520ecf543da4ead5a9fd5623"
+}

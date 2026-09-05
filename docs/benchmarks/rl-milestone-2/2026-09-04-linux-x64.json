@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-04T20:44:29.462Z",
+  "fixture": {
+    "checkpointCount": 24,
+    "retainedIntermediateCheckpoints": 2,
+    "filesPerCheckpoint": 7,
+    "lineageDepth": 16
+  },
+  "referenceHardware": {
+    "platform": "Linux 7.2.2-arch1-1",
+    "architecture": "x86_64",
+    "cpuModel": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+    "logicalCpuCount": 16,
+    "totalMemoryBytes": 16007938048,
+    "nodeVersion": "v24.20.0"
+  },
+  "measurements": {
+    "wallClockMs": 44.125,
+    "cpuUserMs": 85.374,
+    "cpuSystemMs": 16.007,
+    "rssStartBytes": 187650048,
+    "rssEndBytes": 190402560,
+    "rssPeakBytes": 190402560,
+    "sqliteWriteStatements": 62,
+    "sqliteBytes": 592808,
+    "websocketBytes": 73206,
+    "artifactBytesProduced": 986348,
+    "retainedParentCheckpointBytes": 82194,
+    "childInputBytes": 41090,
+    "renderer": {
+      "reducerEvents": 47,
+      "artifactRowVisits": 597,
+      "lineageEdgeVisits": 16
+    }
+  },
+  "checks": {
+    "artifactRows": 24,
+    "readyIntermediateCheckpoints": 2,
+    "trashedIntermediateCheckpoints": 22,
+    "lineageRows": 16,
+    "sourceCopyHashMatches": true,
+    "parentHashUnchanged": true,
+    "retentionBounded": true
+  }
+}

@@ -1,0 +1,9 @@
+[project]
+name = "t3rl-sb3-environment"
+version = "0.1.0"
+description = "Locked Stable-Baselines3 runtime for T3RL"
+requires-python = ">=3.10,<3.14"
+dependencies = ["gymnasium==1.3.0", "stable-baselines3==2.9.0"]
+
+[tool.uv]
+package = false

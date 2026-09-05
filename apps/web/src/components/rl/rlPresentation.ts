@@ -1,4 +1,4 @@
-import type { RlMetricBatch, RlRunState } from "@t3tools/contracts";
+import type { RlArtifactMetadata, RlMetricBatch, RlRunState } from "@t3tools/contracts";
 
 export interface RlMetricDefinition {
   readonly key: string;
@@ -240,4 +240,25 @@ export function formatRlBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function formatRlArtifactIdentity(artifact: RlArtifactMetadata): string {
+  if (artifact.sha256 === undefined || artifact.sha256 === null) return "Legacy · unverified";
+  return `${artifact.state ?? "ready"} · sha256:${artifact.sha256.slice(0, 12)}`;
+}
+
+export function mergeRlArtifactInventory(
+  page: ReadonlyArray<RlArtifactMetadata>,
+  liveSnapshot: ReadonlyArray<RlArtifactMetadata>,
+  limit: number,
+): ReadonlyArray<RlArtifactMetadata> {
+  const byId = new Map(page.map((artifact) => [artifact.artifactId, artifact]));
+  for (const artifact of liveSnapshot) byId.set(artifact.artifactId, artifact);
+  return [...byId.values()]
+    .sort(
+      (left, right) =>
+        right.producedAt.localeCompare(left.producedAt) ||
+        right.artifactId.localeCompare(left.artifactId),
+    )
+    .slice(0, Math.max(0, limit));
 }

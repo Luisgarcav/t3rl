@@ -2,7 +2,7 @@ import {
   type RlArtifactMetadata,
   type RlMetricBatch,
   type RlRunSummary,
-  RL_MAX_RUN_ARTIFACTS,
+  RL_MAX_SNAPSHOT_ARTIFACTS,
   RL_MAX_SNAPSHOT_METRIC_BATCHES,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -39,6 +39,7 @@ const artifact = (index: number): RlArtifactMetadata => ({
 const projection = (): RlRunProjection => ({
   summary,
   manifest: null,
+  lineage: { edges: [], truncated: false },
   artifacts: [],
   metrics: [],
 });
@@ -51,6 +52,7 @@ describe("applyRlSubscriptionEvent", () => {
         _tag: "Snapshot",
         summary,
         manifest: null,
+        lineage: { edges: [], truncated: false },
         artifacts: [artifact(1)],
         metrics: [metric(1)],
       },
@@ -86,7 +88,7 @@ describe("applyRlSubscriptionEvent", () => {
 
   it("keeps live collections within the wire snapshot bounds", () => {
     let current: RlRunProjection | null = projection();
-    for (let index = 0; index <= RL_MAX_RUN_ARTIFACTS; index += 1) {
+    for (let index = 0; index <= RL_MAX_SNAPSHOT_ARTIFACTS; index += 1) {
       current = applyRlSubscriptionEvent(current, {
         _tag: "Artifact",
         artifact: artifact(index),
@@ -96,7 +98,7 @@ describe("applyRlSubscriptionEvent", () => {
       current = applyRlSubscriptionEvent(current, { _tag: "Metrics", batch: metric(index) });
     }
 
-    expect(current?.artifacts).toHaveLength(RL_MAX_RUN_ARTIFACTS);
+    expect(current?.artifacts).toHaveLength(RL_MAX_SNAPSHOT_ARTIFACTS);
     expect(current?.artifacts[0]?.artifactId).toBe("artifact_1");
     expect(current?.metrics).toHaveLength(RL_MAX_SNAPSHOT_METRIC_BATCHES);
     expect(current?.metrics[0]?.step).toBe(1);

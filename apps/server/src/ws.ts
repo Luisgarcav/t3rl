@@ -2076,12 +2076,40 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.rlGetRun, rlManager.get(input), {
             "rpc.aggregate": "rl",
           }),
+        [WS_METHODS.rlListArtifacts]: (input) =>
+          observeRpcEffect(WS_METHODS.rlListArtifacts, rlManager.listArtifacts(input), {
+            "rpc.aggregate": "rl",
+          }),
         [WS_METHODS.rlStartRun]: (input) =>
           observeRpcEffect(WS_METHODS.rlStartRun, rlManager.start(input), {
             "rpc.aggregate": "rl",
           }),
+        [WS_METHODS.rlResumeRun]: (input) =>
+          observeRpcEffect(WS_METHODS.rlResumeRun, rlManager.resume(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlWarmStartRun]: (input) =>
+          observeRpcEffect(WS_METHODS.rlWarmStartRun, rlManager.warmStart(input), {
+            "rpc.aggregate": "rl",
+          }),
         [WS_METHODS.rlCancelRun]: (input) =>
           observeRpcEffect(WS_METHODS.rlCancelRun, rlManager.cancel(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlCreateStudy]: (input) =>
+          observeRpcEffect(WS_METHODS.rlCreateStudy, rlManager.createStudy(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlGetStudy]: (input) =>
+          observeRpcEffect(WS_METHODS.rlGetStudy, rlManager.getStudy(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlCompareStudy]: (input) =>
+          observeRpcEffect(WS_METHODS.rlCompareStudy, rlManager.compareStudy(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlValidateExperiment]: (input) =>
+          observeRpcEffect(WS_METHODS.rlValidateExperiment, rlManager.validateExperiment(input), {
             "rpc.aggregate": "rl",
           }),
         [WS_METHODS.rlSubscribeRun]: (input) =>

@@ -12,6 +12,7 @@ import platform
 import random
 import statistics
 import sys
+import tempfile
 import time
 import traceback
 from typing import Any
@@ -245,8 +246,29 @@ def resolve_config(raw: Any) -> dict[str, Any]:
 def write_json(run_dir: str, relative_path: str, value: Any) -> None:
     target = os.path.join(run_dir, relative_path)
     os.makedirs(os.path.dirname(target) or run_dir, exist_ok=True)
-    with open(target, "w", encoding="utf-8") as handle:
-        json.dump(value, handle, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    descriptor, temporary = tempfile.mkstemp(
+        dir=os.path.dirname(target) or run_dir,
+        prefix=f".{os.path.basename(target)}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(
+                value,
+                handle,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def load_dependencies() -> dict[str, Any]:
@@ -530,7 +552,17 @@ def run(args: argparse.Namespace) -> int:
         callback.emit_metrics(True)
 
         model_base = os.path.join(args.run_dir, "model")
-        model.save(model_base)
+        temporary_model_base = os.path.join(
+            args.run_dir, f".model.{os.getpid()}.{time.monotonic_ns()}"
+        )
+        try:
+            model.save(temporary_model_base)
+            os.replace(f"{temporary_model_base}.zip", f"{model_base}.zip")
+        finally:
+            try:
+                os.unlink(f"{temporary_model_base}.zip")
+            except FileNotFoundError:
+                pass
 
         evaluation_returns: list[float] = []
         evaluation_lengths: list[int] = []

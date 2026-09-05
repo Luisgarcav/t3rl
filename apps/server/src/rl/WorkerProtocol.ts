@@ -1,8 +1,11 @@
 import {
-  RL_WORKER_PROTOCOL_VERSION,
+  RL_SUPPORTED_WORKER_PROTOCOL_VERSIONS,
+  RlArtifactEvidence,
   RlArtifactKind,
+  RlCheckpointPolicy,
   RlErrorCode,
   RlMetricBatch,
+  RlModelIdentity,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -10,10 +13,27 @@ import * as Schema from "effect/Schema";
 export const MAX_WORKER_LINE_BYTES = 64 * 1024;
 
 export type RlWorkerMessage =
-  | { readonly _tag: "Hello"; readonly runner: string; readonly runnerVersion: string }
-  | { readonly _tag: "Manifest"; readonly values: Record<string, unknown> }
+  | {
+      readonly _tag: "Hello";
+      readonly protocol: number;
+      readonly runner: string;
+      readonly runnerVersion: string;
+    }
+  | {
+      readonly _tag: "Manifest";
+      readonly values: Record<string, unknown>;
+      readonly model?: RlModelIdentity | undefined;
+      readonly checkpointPolicy?: RlCheckpointPolicy | undefined;
+    }
   | { readonly _tag: "Metrics"; readonly batch: RlMetricBatch }
-  | { readonly _tag: "Artifact"; readonly kind: RlArtifactKind; readonly path: string }
+  | {
+      readonly _tag: "Artifact";
+      readonly kind: RlArtifactKind;
+      readonly path: string;
+      readonly evidence?: RlArtifactEvidence | undefined;
+    }
+  | { readonly _tag: "Heartbeat"; readonly step: number; readonly wallClockMs: number }
+  | { readonly _tag: "Resource"; readonly batch: RlMetricBatch }
   | { readonly _tag: "Error"; readonly code: RlErrorCode; readonly detail: string }
   | { readonly _tag: "Done"; readonly success: boolean };
 
@@ -43,6 +63,8 @@ const HelloSchema = Schema.Struct({
 const ManifestSchema = Schema.Struct({
   type: Schema.Literals(["manifest"]),
   values: Schema.Record(Schema.String, Schema.Unknown).check(Schema.isMaxProperties(128)),
+  model: Schema.optionalKey(RlModelIdentity),
+  checkpointPolicy: Schema.optionalKey(RlCheckpointPolicy),
 });
 
 const MetricsSchema = Schema.Struct({
@@ -54,6 +76,18 @@ const ArtifactSchema = Schema.Struct({
   type: Schema.Literals(["artifact"]),
   kind: RlArtifactKind,
   path: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(512)),
+  evidence: Schema.optionalKey(RlArtifactEvidence),
+});
+
+const HeartbeatSchema = Schema.Struct({
+  type: Schema.Literals(["heartbeat"]),
+  step: RlMetricBatch.fields.step,
+  wallClockMs: RlMetricBatch.fields.wallClockMs,
+});
+
+const ResourceSchema = Schema.Struct({
+  type: Schema.Literals(["resource"]),
+  ...RlMetricBatch.fields,
 });
 
 const ErrorSchema = Schema.Struct({
@@ -111,19 +145,33 @@ export const decodeWorkerLine = (line: string): RlWorkerDecodeResult => {
     case "hello": {
       const hello = decodeOrNull(HelloSchema, parsed);
       if (hello === null) return failure("MalformedWorkerMessage", "invalid hello");
-      if (hello.protocol !== RL_WORKER_PROTOCOL_VERSION) {
+      if (
+        !(RL_SUPPORTED_WORKER_PROTOCOL_VERSIONS as ReadonlyArray<number>).includes(hello.protocol)
+      ) {
         return failure(
           "ProtocolIncompatible",
-          `worker speaks protocol ${hello.protocol}, server speaks ${RL_WORKER_PROTOCOL_VERSION}`,
+          `worker speaks protocol ${hello.protocol}; server supports ${RL_SUPPORTED_WORKER_PROTOCOL_VERSIONS.join(", ")}`,
         );
       }
-      return message({ _tag: "Hello", runner: hello.runner, runnerVersion: hello.runnerVersion });
+      return message({
+        _tag: "Hello",
+        protocol: hello.protocol,
+        runner: hello.runner,
+        runnerVersion: hello.runnerVersion,
+      });
     }
     case "manifest": {
       const manifest = decodeOrNull(ManifestSchema, parsed);
       return manifest === null
         ? failure("MalformedWorkerMessage", "invalid manifest")
-        : message({ _tag: "Manifest", values: manifest.values });
+        : message({
+            _tag: "Manifest",
+            values: manifest.values,
+            ...(manifest.model === undefined ? {} : { model: manifest.model }),
+            ...(manifest.checkpointPolicy === undefined
+              ? {}
+              : { checkpointPolicy: manifest.checkpointPolicy }),
+          });
     }
     case "metrics": {
       const metrics = decodeOrNull(MetricsSchema, parsed);
@@ -144,7 +192,37 @@ export const decodeWorkerLine = (line: string): RlWorkerDecodeResult => {
       if (!isSafeRelativePath(artifact.path)) {
         return failure("MalformedWorkerMessage", "artifact path left the run directory");
       }
-      return message({ _tag: "Artifact", kind: artifact.kind, path: artifact.path });
+      return message({
+        _tag: "Artifact",
+        kind: artifact.kind,
+        path: artifact.path,
+        ...(artifact.evidence === undefined ? {} : { evidence: artifact.evidence }),
+      });
+    }
+    case "heartbeat": {
+      const heartbeat = decodeOrNull(HeartbeatSchema, parsed);
+      return heartbeat === null
+        ? failure("MalformedWorkerMessage", "invalid heartbeat")
+        : message({
+            _tag: "Heartbeat",
+            step: heartbeat.step,
+            wallClockMs: heartbeat.wallClockMs,
+          });
+    }
+    case "resource": {
+      const resource = decodeOrNull(ResourceSchema, parsed);
+      if (resource === null) return failure("MalformedWorkerMessage", "invalid resource sample");
+      if (Object.keys(resource.values).some((key) => !key.startsWith("system/"))) {
+        return failure("MalformedWorkerMessage", "resource keys must use the system namespace");
+      }
+      return message({
+        _tag: "Resource",
+        batch: {
+          step: resource.step,
+          wallClockMs: resource.wallClockMs,
+          values: resource.values,
+        },
+      });
     }
     case "error": {
       const error = decodeOrNull(ErrorSchema, parsed);

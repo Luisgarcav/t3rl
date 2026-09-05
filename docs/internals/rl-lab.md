@@ -148,9 +148,14 @@ are labeled as evaluation output so they are not confused with training rewards.
 ### Artifact
 
 A file produced by a run, such as a checkpoint, resolved manifest, log, evaluation video, or summary.
-Artifacts have a media type, size, and logical kind. Clients receive artifacts through authorized
-server endpoints rather than arbitrary filesystem paths. Content hashes remain a later evidence
-extension.
+Artifacts have a media type, size, logical kind, server-computed SHA-256, state, and a canonical
+per-file manifest when they are directories. Clients receive artifacts through authorized server
+endpoints rather than arbitrary filesystem paths. Legacy rows remain readable with an unknown hash,
+but cannot become continuation sources.
+
+An adapter and an exact checkpoint are different artifact roles. A PEFT adapter is portable learned
+state tied to a pinned base model. A resumable checkpoint additionally proves the trainer, optimizer,
+scheduler, RNG, dataset cursor, and applicable gradient-scaler state needed for exact continuation.
 
 ### Runner
 
@@ -184,10 +189,12 @@ and reporting it as a failure would fabricate a scientific claim about a traject
 The first terminal fact wins: a worker that finishes on its own before a pending cancellation reaches
 it records the result it reported, not `cancelled`.
 
-Each start carries a client request id. Retrying the same request for a project returns the original
-run id without spawning again; a deliberate rerun uses a new request id and produces a new run.
-Cancelling a terminal run succeeds without effect. A disconnected client does not affect the
-process. Process adoption and checkpoint resume after a restart are later capabilities.
+Each start or continuation carries a client request id. Retrying the same request for a project
+returns the original run id without spawning again; a deliberate rerun uses a new request id and
+produces a new run. Exact resume and adapter warm start always create children and insert their
+lineage edge atomically with run intent. Cancelling a terminal run succeeds without effect. A
+disconnected client does not affect the process. Process adoption after a restart remains a later
+capability; continuation from an already published checkpoint is implemented.
 
 ## Contracts and persistence
 
@@ -198,8 +205,11 @@ The implemented RPC surface is intentionally small:
 
 - `rl.capabilities`: report available runners, actionable setup failures, and bundled experiments.
 - `rl.listRuns`: return durable run summaries for one project.
-- `rl.getRun`: return the manifest, bounded metrics, and artifact metadata for one run.
+- `rl.getRun`: return the manifest, lineage, bounded metrics, and artifact metadata for one run.
+- `rl.listArtifacts`: page through checkpoint-heavy artifact inventories.
 - `rl.startRun`: request a run from an experiment, seed, and client request id.
+- `rl.resumeRun`: create a child from a complete exact checkpoint after compatibility validation.
+- `rl.warmStartRun`: create a child from a verified PEFT adapter without claiming exact resume.
 - `rl.cancelRun`: request cancellation of a non-terminal run.
 - `rl.subscribeRun`: send a durable snapshot followed by live lifecycle, manifest, metric, and
   artifact events.
@@ -233,6 +243,10 @@ Generated artifacts default to environment-local T3 state rather than the Git wo
 <stateDir>/rl/<run-id>/
   manifest.json
   worker.log
+  checkpoints/checkpoint-<step>-<class>/
+  adapters/adapter-step-<step>/
+  inputs/checkpoint/                    # child-local copy, exact resume only
+  inputs/adapter/                       # child-local copy, warm start only
   summary.json
   evaluation.json
   replay.json
@@ -242,17 +256,19 @@ Generated artifacts default to environment-local T3 state rather than the Git wo
 This avoids adding large binary output to Git and prevents run output from contaminating thread
 checkpoints. Exporting selected artifacts into the workspace is an explicit future action.
 
-The Phase 1 immutable manifest contains:
+The immutable manifest contains:
 
 - experiment id and resolved configuration;
 - runner id and version plus worker protocol version;
 - random seed and runner-resolved evaluation policy;
 - Git commit and dirty-worktree status;
-- Python executable, version, and environment fingerprint;
+- Python executable, version, environment fingerprint, and optional checked lock evidence;
 - instrumentation level and a host hardware summary.
+- for protocol v2, pinned base model and tokenizer revisions, canonical PEFT configuration and
+  hash, quantization, precision, trainable modules, and checkpoint policy; and
+- for child runs, the direct parent edge and exact source artifact hash.
 
-Content hashes, retained dirty patches, accelerator evidence, and exported source snapshots are later
-research-evidence extensions.
+Retained dirty patches and exported source snapshots remain later research-evidence extensions.
 
 Secrets and environment-variable values are excluded. The manifest may record the names of declared
 inputs, but never credentials or raw tokens.
@@ -264,13 +280,16 @@ is reserved for newline-delimited JSON protocol messages; human-readable logs go
 and the bounded worker log.
 
 The worker must first emit a `hello` message containing its protocol, runner, and runner version. The
-server rejects an incompatible protocol before marking the run as `running`.
+server supports legacy protocol v1 and checkpoint-aware protocol v2, but a definition declares the
+exact version it expects and the handshake must match before the run becomes `running`.
 
 Implemented message kinds are:
 
 - `hello`
 - `manifest`
 - `metrics`
+- `heartbeat` (protocol v2)
+- `resource` (protocol v2, normalized under `system/*`)
 - `artifact`
 - `error`
 - `done`
@@ -278,6 +297,21 @@ Implemented message kinds are:
 The initial worker receives its immutable inputs through an argument vector. Cancellation is a
 process-tree signal, not a protocol message. Messages are validated at the server boundary; unknown
 message kinds and invalid required fields fail the run with a protocol error.
+
+Protocol v2 requires typed model identity and checkpoint policy in the manifest. Checkpoint and
+adapter announcements include typed compatibility evidence, step, token count, and dataset cursor;
+checkpoints additionally enumerate captured resume state. The worker publishes a same-filesystem
+temporary directory, fsyncs it, and atomically renames it before announcing it. The server then:
+
+1. resolves and confines the canonical path to the run root;
+2. computes the sorted content manifest and root SHA-256 itself;
+3. verifies adapter files and, for exact checkpoints, every required trainer-state file;
+4. marks the artifact ready and applies the intermediate-checkpoint retention limit; and
+5. exposes it as a continuation source only after re-hashing it immediately before child creation.
+
+The source is copied into the child run and re-verified before spawn. Workers only receive that
+child-local path. This keeps a parent byte-for-byte immutable even if the child fails or is later
+removed.
 
 ## Metrics and rendering
 
@@ -406,11 +440,12 @@ Cursor, Grok, and OpenCode. It allows an agent to:
 - propose a new experiment definition or ablation as an ordinary workspace edit;
 - start a run only through an explicit, permission-aware action.
 
-The concrete tools are `rl_capabilities`, `rl_list_runs`, `rl_get_run`, `rl_query_metrics`,
-`rl_compare_runs`, `rl_read_artifact`, `rl_start_run`, and `rl_cancel_run`. The MCP credential derives
-the project from its thread; callers cannot supply a different project ID, and foreign run IDs are
-reported as missing. Metric queries, summaries, comparisons, and textual artifact reads are bounded.
-Binary models are never copied into model context.
+The concrete tools are `rl_capabilities`, `rl_list_runs`, `rl_get_run`, `rl_list_artifacts`,
+`rl_query_metrics`, `rl_compare_runs`, `rl_read_artifact`, `rl_start_run`, `rl_resume_run`,
+`rl_warm_start_run`, and `rl_cancel_run`. The MCP credential derives the project from its thread;
+callers cannot supply a different project ID, and foreign run IDs are reported as missing. Metric
+queries, summaries, comparisons, artifact pages, and textual artifact reads are bounded. Binary
+models are never copied into model context.
 
 RL access is attached by default and is independent of agent browser access. Disabling
 `enableAgentBrowserAccess` removes only the `preview` capability; it does not remove the `rl`
@@ -475,6 +510,7 @@ The server distinguishes at least:
 - worker protocol incompatibility;
 - training exception reported by the runner;
 - unexpected worker exit;
+- incompatible or incomplete resume evidence;
 - user cancellation;
 - server interruption.
 
@@ -700,6 +736,8 @@ Node workspace package and must not leak Python framework types into `packages/c
   interrupted.
 - Subscription tests prove batching, byte limits, reconnection, and subscriber cleanup.
 - Artifact tests cover authorization, media metadata, lexical traversal, and symlink escape attempts.
+- A standard-library protocol-v2 fixture proves uninterrupted/resumed equivalence, independent
+  adapter loading, retention, graceful cancellation, lineage, and parent immutability without a GPU.
 - Client tests render empty, unavailable, preparing, running, failed, cancelled, and completed states.
 
 ## Later milestones
@@ -730,11 +768,15 @@ The run kernel increment settled the first two. Full reasoning lives in
   introducing scope literals. Scopes are frozen per session in `auth_sessions.scopes`, so a new one
   would force every paired device to re-pair, and a client that can dispatch an orchestration command
   already runs arbitrary code on the server.
-- **Settled for development.** `python/pyproject.toml` declares the optional worker environment and
-  `T3RL_PYTHON` selects it; capability detection remains read-only. Desktop release distribution is
-  still a later packaging decision.
-- **Open.** The retention limit and explicit cleanup behavior for environment-local run artifacts.
-  The kernel ships no way to delete a run, so this stays deferred rather than half-built.
+- **Settled for development.** Independent committed `uv` projects under `python/environments/`
+  isolate Stable-Baselines3, TRL, and Axolotl. Dedicated `T3RL_PYTHON_<RUNNER>` variables select
+  their interpreters, with `T3RL_PYTHON` as a fallback. Capability detection runs only
+  `uv lock --check`, records exact environment evidence, and never mutates an environment. Desktop
+  distribution of those environments remains a later packaging decision.
+- **Partially settled.** Protocol-v2 policies enforce a bounded number of ready intermediate
+  checkpoints and can retain a final checkpoint. Export, whole-run trash/restore, best-checkpoint
+  selection, and explicit purge remain in the later retention milestone; `keepBest=true` is refused
+  until a selection metric is part of the experiment evidence.
 
 These decisions affect persistence, security, and distribution. Algorithm catalogs, visual design,
 and distributed execution do not need to be settled before the vertical slice begins.

@@ -1,0 +1,32 @@
+{
+  "experimentId": "fake-checkpoint",
+  "displayName": "Deterministic resumable tiny model",
+  "description": "Exercises protocol-v2 LoRA exports, exact checkpoints, retention, resume, warm start, and lineage without ML dependencies.",
+  "runnerId": "fake",
+  "protocolVersion": 2,
+  "instrumentationLevel": "standard",
+  "defaultSeed": 7,
+  "entrypoint": "../fake_worker.py",
+  "scenario": "checkpoint",
+  "maxRuntimeSeconds": 60,
+  "config": {
+    "modelId": "t3rl/tiny-linear-fixture",
+    "modelRevision": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "tokenizerRevision": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "quantization": "none",
+    "precision": "fp32",
+    "loraRank": 2,
+    "loraAlpha": 4,
+    "loraDropout": 0,
+    "loraBias": "none",
+    "loraTargetModules": ["linear"],
+    "loraModulesToSave": [],
+    "useRslora": false,
+    "checkpointCadenceSteps": 2,
+    "maxIntermediateCheckpoints": 2,
+    "keepBest": false,
+    "keepFinal": true,
+    "gracefulCheckpointDeadlineSeconds": 5,
+    "maxSteps": 8
+  }
+}

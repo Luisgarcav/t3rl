@@ -3,7 +3,9 @@
 > For maintainers. This plan turns the remaining post-training work into ordered, reviewable
 > increments. It is a dependency plan, not a calendar commitment.
 
-**Status:** Proposed
+**Status:** In progress — the Gate 0 through Milestone 2 implementation slice is ready for first
+review; the explicitly approved integrated web pass, clean-machine environment reproduction, and
+CUDA-backed TRL/Axolotl smoke runs remain release verification.
 
 **Goal:** Make T3RL a reproducible control plane for local and distributed LLM post-training with
 TRL and Axolotl, while keeping the T3 server authoritative, Python workers replaceable, clients
@@ -330,6 +332,17 @@ model; exact trainer continuation therefore needs separate state. See the offici
 - Every checkpoint displayed as resumable has a verified hash and complete compatibility evidence.
 - A completed parent never changes state or artifacts when its child runs, fails, or is deleted.
 
+Implementation checkpoint (2026-09-04): protocol v2 now has explicit liveness/resource messages and
+distinguishes independently loadable PEFT adapters from complete exact-resume checkpoints; TRL and
+Axolotl share an atomic publication callback. The server validates and re-hashes compatibility
+evidence, copies a source into a new child, stores bounded lineage, enforces intermediate retention,
+and requests a graceful checkpoint on cancellation. Web/desktop and project-scoped agent utilities
+expose separate resume and warm-start actions. A standard-library deterministic fixture proves
+step-4 resume equivalence, adapter loading, graceful cancellation, lineage, retention, and
+byte-for-byte parent immutability without requiring a GPU. The checked-in
+[checkpoint and lineage profile](../../benchmarks/rl-milestone-2/README.md)
+records CPU, RSS, SQLite, WebSocket, artifact-growth, and reducer costs for this increment.
+
 ## Milestone 3: studies, multi-seed evaluation, and paired comparison
 
 ### Goal
@@ -361,6 +374,14 @@ Stop treating one run as a conclusion and make comparisons statistically honest.
 - The UI always shows N, seed set, aggregation method, interval, and unmatched/failed runs.
 - Incompatible protocols cannot be presented as a paired result.
 - Cancelling one member does not mislabel a partial study as complete.
+
+Implementation checkpoint (2026-09-04): studies now persist immutable A/B definitions, four
+independent seed roles, bounded run schedules, member failure/partial state, and a server-verified
+evaluation-protocol hash. Versioned deterministic hierarchical bootstrap comparison is server-owned
+and reports N, seed set, dispersion, confidence interval, unmatched runs, failures, and explicit
+insufficient-evidence state. Web/desktop Compare and project-scoped `rl_*` utilities consume the
+same RPC result. The checked-in [milestone 3 profile](../../benchmarks/rl-milestone-3/README.md)
+records comparison CPU, RSS, WebSocket, SQLite, artifact, and renderer bounds.
 
 ## Milestone 4: project-owned experiments, datasets, models, and verifiers
 
@@ -394,6 +415,17 @@ commands.
 - One project-defined TRL experiment and one Axolotl experiment pass the same lifecycle and evidence
   contract without modifying bundled worker source.
 
+Implementation checkpoint (2026-09-04): version-1 project definitions now resolve from
+`.t3rl/experiments` under the explicit `project__` namespace; canonical bundled catalog entries use
+`bundled__`. The server validates model/tokenizer revisions, dataset and verifier references,
+budgets, runner capacity, and path confinement without launching or installing anything. Local
+inputs reject lexical and symlink escapes, are content-hashed, copied into the run's immutable input
+snapshot, and re-verified before Python starts. TRL and Axolotl load project datasets and verifier
+modules only inside their worker process. `rl.validateExperiment`, web client runtime support, and
+`rl_validate_experiment` expose the same report. The checked-in
+[milestone 4 profile](../../benchmarks/rl-milestone-4/README.md) records validation and snapshot
+costs.
+
 ## Milestone 5: SFT and DPO
 
 ### Goal
@@ -425,6 +457,17 @@ makes it a practical canonical adapter boundary:
 - DPO rejects malformed or unpaired preference records before model allocation.
 - Native TRL and Axolotl either honor a declared option or report it unsupported; neither silently
   substitutes another behavior.
+
+Implementation checkpoint (2026-09-05): runner capability reports are method-specific, so CPU SFT
+and DPO availability no longer implies CUDA GRPO availability. The project schema now distinguishes
+SFT text/conversation, DPO preference, and RLVR datasets and requires an explicit evaluation claim
+and chat-template evidence. A native TRL offline adapter provides SFT/DPO training, before/after
+evaluation, normalized metrics, PEFT/LoRA export, checkpoint callbacks, exact resume, and explicit
+cross-experiment warm start from SFT into DPO. Axolotl consumes the same public schema through a
+fixed configuration translator and supervised CLI adapter. Deterministic CPU fixtures reject
+malformed preference records; GPU smoke is separately gated. The checked-in
+[milestone 5 profile](../../benchmarks/rl-milestone-5/README.md) records parsing, hashing, transport,
+storage, and renderer bounds.
 
 ## Milestone 6: RLOO, then PPO
 
@@ -774,6 +817,14 @@ recoverable, research bundles verify independently, mobile monitoring works remo
 old runs, and every declared performance budget passes.
 
 ## Recommended first implementation slice
+
+Implementation checkpoint (2026-09-04): this slice now has step-preserving durable metrics,
+deterministic RLVR evidence, TRL/Axolotl parity checks, atomic worker publication, server-authoritative
+file and directory hashes, backward-compatible artifact identity, bounded pagination across RPC,
+web, and `rl_list_artifacts`, independent checked `uv` locks, and a checked-in
+[fake-stream baseline](../../benchmarks/rl-gate-0/README.md). Milestone 2 additionally has distinct
+adapter/checkpoint evidence, exact child-run resume, adapter warm start, immutable lineage, bounded
+checkpoint retention, and graceful cancellation checkpoints.
 
 Start with a narrow two-part slice:
 

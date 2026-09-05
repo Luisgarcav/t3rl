@@ -22,7 +22,10 @@ import * as SourceEvidence from "./SourceEvidence.ts";
 import { WorkerSpawnerLive } from "./WorkerSpawner.ts";
 
 const repoRoot = NodeURL.fileURLToPath(new URL("../../../../", import.meta.url));
-const python = process.env["T3RL_PYTHON"]?.trim() || "python3";
+const python =
+  process.env["T3RL_PYTHON_STABLE_BASELINES3"]?.trim() ||
+  process.env["T3RL_PYTHON"]?.trim() ||
+  "python3";
 const worker = `${repoRoot}python/t3rl_worker/sb3_worker.py`;
 const realSmokeEnabled =
   process.env["T3RL_REAL_SMOKE"] === "1" &&

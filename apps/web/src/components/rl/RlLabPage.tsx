@@ -5,13 +5,16 @@ import {
   type EnvironmentId,
   isTerminalRlRunState,
   type ProjectId,
+  type RlArtifactId,
   type RlArtifactMetadata,
   type RlCapabilityReport,
   type RlExperimentSummary,
   type RlResolvedManifest,
+  type RlRunLineage,
   RlRunRequestId,
   type RlRunId,
   type RlRunSummary,
+  RL_MAX_ARTIFACT_PAGE_SIZE,
 } from "@t3tools/contracts";
 import {
   ActivityIcon,
@@ -20,6 +23,8 @@ import {
   BarChart3Icon,
   BoxIcon,
   CheckCircle2Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   Clock3Icon,
   DatabaseIcon,
   ExternalLinkIcon,
@@ -60,9 +65,11 @@ import { type RlLabView, rlLabViewRequiresRun } from "./rlLabViews";
 import { RlMetricChart } from "./RlMetricChart";
 import {
   formatRlBytes,
+  formatRlArtifactIdentity,
   formatRlDuration,
   formatRlState,
   isLlmPostTrainingRunner,
+  mergeRlArtifactInventory,
   rlMetricDefinitionsForRunner,
   rlStatusVariant,
 } from "./rlPresentation";
@@ -102,6 +109,39 @@ function commandFailureMessage(result: Parameters<typeof squashAtomCommandFailur
     : "The request failed.";
 }
 
+function selectedRunQuery(environmentId: EnvironmentId, runId: RlRunId | null) {
+  return runId === null ? null : rlEnvironment.run({ environmentId, input: { runId } });
+}
+
+function mergeSelectedRunSummary(
+  runs: ReadonlyArray<RlRunSummary>,
+  selectedSummary: RlRunSummary | null,
+): ReadonlyArray<RlRunSummary> {
+  if (selectedSummary === null) return runs;
+  return runs.map((run) => (run.runId === selectedSummary.runId ? selectedSummary : run));
+}
+
+function resolveRlLabView(selectedRunId: RlRunId | null, activeView: RlLabView): RlLabView {
+  return selectedRunId === null && rlLabViewRequiresRun(activeView) ? "overview" : activeView;
+}
+
+function resolveRunView(view: RlLabView): RunScopedRlLabView {
+  return view === "compare" ? "overview" : view;
+}
+
+type RlLabPageProps = {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly selectedRunId: RlRunId | null;
+  readonly activeView: RlLabView;
+  readonly chromeVariant?: "page" | "embedded";
+  readonly baselineRunId?: RlRunId | null;
+  readonly baselineActionPending?: boolean;
+  readonly onSelectRun: (runId: RlRunId | null) => void;
+  readonly onViewChange: (view: RlLabView) => void;
+  readonly onUseRunAsBaseline?: (runId: RlRunId) => void;
+};
+
 export function RlLabPage({
   environmentId,
   projectId,
@@ -113,66 +153,26 @@ export function RlLabPage({
   onSelectRun,
   onViewChange,
   onUseRunAsBaseline,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-  readonly selectedRunId: RlRunId | null;
-  readonly activeView: RlLabView;
-  readonly chromeVariant?: "page" | "embedded";
-  readonly baselineRunId?: RlRunId | null;
-  readonly baselineActionPending?: boolean;
-  readonly onSelectRun: (runId: RlRunId | null) => void;
-  readonly onViewChange: (view: RlLabView) => void;
-  readonly onUseRunAsBaseline?: (runId: RlRunId) => void;
-}) {
-  const project = useProject(scopeProjectRef(environmentId, projectId));
+}: RlLabPageProps) {
   const capabilitiesAtom = rlEnvironment.capabilities({ environmentId, input: {} });
   const runsAtom = rlEnvironment.runs({ environmentId, input: { projectId, limit: 200 } });
-  const runAtom =
-    selectedRunId === null
-      ? null
-      : rlEnvironment.run({ environmentId, input: { runId: selectedRunId } });
+  const runAtom = selectedRunQuery(environmentId, selectedRunId);
   const capabilities = useEnvironmentQuery(capabilitiesAtom);
   const runs = useEnvironmentQuery(runsAtom);
   const liveRun = useEnvironmentQuery(runAtom);
   const selectedSummary = liveRun.data?.summary ?? null;
-  const displayedRuns = (runs.data?.runs ?? []).map((run) =>
-    selectedSummary !== null && selectedSummary.runId === run.runId ? selectedSummary : run,
-  );
-  const effectiveView =
-    selectedRunId === null && rlLabViewRequiresRun(activeView) ? "overview" : activeView;
-  const runView: RunScopedRlLabView = effectiveView === "compare" ? "overview" : effectiveView;
+  const displayedRuns = mergeSelectedRunSummary(runs.data?.runs ?? [], selectedSummary);
+  const effectiveView = resolveRlLabView(selectedRunId, activeView);
+  const runView = resolveRunView(effectiveView);
 
   return (
     <div className="@container/rl-lab flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <header
-        className={cn(
-          "flex shrink-0 items-center gap-3 border-b border-border px-3",
-          chromeVariant === "page"
-            ? [
-                "drag-region h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] @[36rem]/rl-lab:px-5",
-                "wco:pr-[var(--workspace-native-controls-inset)]",
-                COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-              ]
-            : "h-11 min-h-11",
-        )}
-      >
-        <FlaskConicalIcon className="size-4 text-muted-foreground" />
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="shrink-0 text-sm font-semibold">RL Lab</h1>
-          <span className="truncate text-xs text-muted-foreground">
-            {project?.title ?? projectId}
-          </span>
-        </div>
-        <Button
-          className={cn("ml-auto", chromeVariant === "page" && "no-drag")}
-          size="xs"
-          onClick={() => onSelectRun(null)}
-        >
-          <PlayIcon />
-          New run
-        </Button>
-      </header>
+      <RlLabHeader
+        chromeVariant={chromeVariant}
+        environmentId={environmentId}
+        projectId={projectId}
+        onNewRun={() => onSelectRun(null)}
+      />
 
       <RlLabNavigation
         activeView={effectiveView}
@@ -191,44 +191,161 @@ export function RlLabPage({
         />
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-7xl p-4 @[42rem]/rl-lab:p-6 @[64rem]/rl-lab:p-8">
-            {effectiveView === "compare" ? (
-              <RlRunComparison
-                defaultExperimentId={selectedSummary?.experimentId ?? null}
-                environmentId={environmentId}
-                runs={displayedRuns}
-              />
-            ) : selectedRunId === null ? (
-              <RunLauncher
-                capabilities={capabilities.data}
-                error={capabilities.error}
-                isPending={capabilities.isPending}
-                environmentId={environmentId}
-                projectId={projectId}
-                onRefresh={capabilities.refresh}
-                onRunsRefresh={runs.refresh}
-                onStarted={onSelectRun}
-              />
-            ) : (
-              <RunDetail
-                environmentId={environmentId}
-                error={liveRun.error}
-                isPending={liveRun.isPending}
-                projection={liveRun.data}
-                runId={selectedRunId}
-                view={runView}
-                baselineActionPending={baselineActionPending}
-                isBaseline={selectedRunId === baselineRunId}
-                onRefresh={liveRun.refresh}
-                onRunsRefresh={runs.refresh}
-                {...(onUseRunAsBaseline === undefined
-                  ? {}
-                  : { onUseAsBaseline: onUseRunAsBaseline })}
-              />
-            )}
+            <RlLabWorkspace
+              baselineActionPending={baselineActionPending}
+              baselineRunId={baselineRunId}
+              capabilities={capabilities.data}
+              capabilitiesError={capabilities.error}
+              capabilitiesPending={capabilities.isPending}
+              effectiveView={effectiveView}
+              environmentId={environmentId}
+              liveRunError={liveRun.error}
+              liveRunPending={liveRun.isPending}
+              onCapabilitiesRefresh={capabilities.refresh}
+              onRunRefresh={liveRun.refresh}
+              onRunsRefresh={runs.refresh}
+              onStarted={onSelectRun}
+              projectId={projectId}
+              projection={liveRun.data}
+              runView={runView}
+              runs={displayedRuns}
+              selectedRunId={selectedRunId}
+              selectedSummary={selectedSummary}
+              {...(onUseRunAsBaseline === undefined ? {} : { onUseRunAsBaseline })}
+            />
           </div>
         </main>
       </div>
     </div>
+  );
+}
+
+function RlLabHeader({
+  chromeVariant,
+  environmentId,
+  projectId,
+  onNewRun,
+}: {
+  readonly chromeVariant: "page" | "embedded";
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly onNewRun: () => void;
+}) {
+  const project = useProject(scopeProjectRef(environmentId, projectId));
+  return (
+    <header
+      className={cn(
+        "flex shrink-0 items-center gap-3 border-b border-border px-3",
+        chromeVariant === "page"
+          ? [
+              "drag-region h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] @[36rem]/rl-lab:px-5",
+              "wco:pr-[var(--workspace-native-controls-inset)]",
+              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            ]
+          : "h-11 min-h-11",
+      )}
+    >
+      <FlaskConicalIcon className="size-4 text-muted-foreground" />
+      <div className="flex min-w-0 items-baseline gap-2">
+        <h1 className="shrink-0 text-sm font-semibold">RL Lab</h1>
+        <span className="truncate text-xs text-muted-foreground">
+          {project?.title ?? projectId}
+        </span>
+      </div>
+      <Button
+        className={cn("ml-auto", chromeVariant === "page" && "no-drag")}
+        size="xs"
+        onClick={onNewRun}
+      >
+        <PlayIcon />
+        New run
+      </Button>
+    </header>
+  );
+}
+
+function RlLabWorkspace({
+  baselineActionPending,
+  baselineRunId,
+  capabilities,
+  capabilitiesError,
+  capabilitiesPending,
+  effectiveView,
+  environmentId,
+  liveRunError,
+  liveRunPending,
+  onCapabilitiesRefresh,
+  onRunRefresh,
+  onRunsRefresh,
+  onStarted,
+  onUseRunAsBaseline,
+  projectId,
+  projection,
+  runView,
+  runs,
+  selectedRunId,
+  selectedSummary,
+}: {
+  readonly baselineActionPending: boolean;
+  readonly baselineRunId: RlRunId | null;
+  readonly capabilities: RlCapabilityReport | null;
+  readonly capabilitiesError: string | null;
+  readonly capabilitiesPending: boolean;
+  readonly effectiveView: RlLabView;
+  readonly environmentId: EnvironmentId;
+  readonly liveRunError: string | null;
+  readonly liveRunPending: boolean;
+  readonly onCapabilitiesRefresh: () => void;
+  readonly onRunRefresh: () => void;
+  readonly onRunsRefresh: () => void;
+  readonly onStarted: (runId: RlRunId) => void;
+  readonly onUseRunAsBaseline?: (runId: RlRunId) => void;
+  readonly projectId: ProjectId;
+  readonly projection: RlRunProjection | null;
+  readonly runView: RunScopedRlLabView;
+  readonly runs: ReadonlyArray<RlRunSummary>;
+  readonly selectedRunId: RlRunId | null;
+  readonly selectedSummary: RlRunSummary | null;
+}) {
+  if (effectiveView === "compare") {
+    return (
+      <RlRunComparison
+        defaultExperimentId={selectedSummary?.experimentId ?? null}
+        environmentId={environmentId}
+        runs={runs}
+      />
+    );
+  }
+  if (selectedRunId === null) {
+    return (
+      <RunLauncher
+        capabilities={capabilities}
+        environmentId={environmentId}
+        error={capabilitiesError}
+        isPending={capabilitiesPending}
+        projectId={projectId}
+        onRefresh={onCapabilitiesRefresh}
+        onRunsRefresh={onRunsRefresh}
+        onStarted={onStarted}
+      />
+    );
+  }
+  return (
+    <RunDetail
+      baselineActionPending={baselineActionPending}
+      environmentId={environmentId}
+      error={liveRunError}
+      isBaseline={selectedRunId === baselineRunId}
+      isPending={liveRunPending}
+      projectId={projectId}
+      projection={projection}
+      runId={selectedRunId}
+      view={runView}
+      onRefresh={onRunRefresh}
+      onRunsRefresh={onRunsRefresh}
+      onStarted={onStarted}
+      {...(onUseRunAsBaseline === undefined ? {} : { onUseAsBaseline: onUseRunAsBaseline })}
+    />
   );
 }
 
@@ -389,6 +506,14 @@ function RunLauncher({
       ? null
       : (capabilities?.runners.find((entry) => entry.runnerId === selectedExperiment.runnerId) ??
         null);
+  const selectedMethodCapability =
+    selectedExperiment?.method === undefined
+      ? null
+      : (selectedRunner?.methodCapabilities?.find(
+          (entry) => entry.method === selectedExperiment.method,
+        ) ?? null);
+  const selectedMethodAvailable =
+    selectedMethodCapability?.available ?? selectedRunner?.available === true;
   const seed =
     selectedExperiment !== null && seedOverride?.experimentId === selectedExperiment.experimentId
       ? seedOverride.value
@@ -396,7 +521,7 @@ function RunLauncher({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (selectedExperiment === null || selectedRunner?.available !== true) return;
+    if (selectedExperiment === null || !selectedMethodAvailable) return;
     if (seed.trim().length === 0) {
       setStartError("Seed is required.");
       return;
@@ -464,7 +589,7 @@ function RunLauncher({
         </p>
       </div>
 
-      {selectedExperiment !== null && selectedRunner?.available !== true ? (
+      {selectedExperiment !== null && !selectedMethodAvailable ? (
         <Alert variant="warning">
           <AlertCircleIcon />
           <AlertTitle>
@@ -473,7 +598,8 @@ function RunLauncher({
               : `${selectedRunner.runnerId} is unavailable`}
           </AlertTitle>
           <AlertDescription>
-            {selectedRunner?.remedy ??
+            {selectedMethodCapability?.remedy ??
+              selectedRunner?.remedy ??
               "Verify the runner catalog and dependencies in the server environment."}
           </AlertDescription>
         </Alert>
@@ -485,7 +611,7 @@ function RunLauncher({
           <CardDescription>
             Choose a catalog experiment and an explicit random seed.
           </CardDescription>
-          {selectedRunner?.available ? (
+          {selectedMethodAvailable ? (
             <CardAction>
               <Badge variant="success">
                 <CheckCircle2Icon />
@@ -563,7 +689,7 @@ function RunLauncher({
               ) : null}
 
               <div className="flex justify-end">
-                <Button disabled={isStarting || selectedRunner?.available !== true} type="submit">
+                <Button disabled={isStarting || !selectedMethodAvailable} type="submit">
                   {isStarting ? <Spinner /> : <PlayIcon />}
                   {isStarting ? "Starting…" : "Start run"}
                 </Button>
@@ -597,8 +723,155 @@ function ExperimentDescription({ experiment }: { readonly experiment: RlExperime
   );
 }
 
+function latestReadyContinuationArtifact(
+  artifacts: ReadonlyArray<RlArtifactMetadata>,
+  tag: "Checkpoint" | "Adapter",
+): RlArtifactMetadata | undefined {
+  return artifacts
+    .filter((artifact) => artifact.state === "ready" && artifact.evidence?._tag === tag)
+    .toSorted(
+      (left, right) => (right.evidence?.globalStep ?? -1) - (left.evidence?.globalStep ?? -1),
+    )[0];
+}
+
+function RunContinuationControls({
+  artifacts,
+  enabled,
+  environmentId,
+  parentRunId,
+  projectId,
+  onRunsRefresh,
+  onStarted,
+}: {
+  readonly artifacts: ReadonlyArray<RlArtifactMetadata>;
+  readonly enabled: boolean;
+  readonly environmentId: EnvironmentId;
+  readonly parentRunId: RlRunId;
+  readonly projectId: ProjectId;
+  readonly onRunsRefresh: () => void;
+  readonly onStarted: (runId: RlRunId) => void;
+}) {
+  const [pending, setPending] = useState<"resume" | "warm-start" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const resumeRun = useAtomCommand(rlEnvironment.resume, { reportFailure: false });
+  const warmStartRun = useAtomCommand(rlEnvironment.warmStart, { reportFailure: false });
+  const checkpoint = latestReadyContinuationArtifact(artifacts, "Checkpoint");
+  const adapter = latestReadyContinuationArtifact(artifacts, "Adapter");
+
+  const continueRun = async (relation: "resume" | "warm-start") => {
+    const artifact = relation === "resume" ? checkpoint : adapter;
+    if (!enabled || artifact === undefined) return;
+    setPending(relation);
+    setError(null);
+    const command = relation === "resume" ? resumeRun : warmStartRun;
+    const result = await command({
+      environmentId,
+      input: {
+        projectId,
+        parentRunId,
+        sourceArtifactId: artifact.artifactId,
+        requestId: RlRunRequestId.make(randomUUID()),
+      },
+    });
+    setPending(null);
+    if (result._tag === "Success") {
+      onRunsRefresh();
+      onStarted(result.value.runId);
+      return;
+    }
+    setError(commandFailureMessage(result));
+  };
+
+  if (!enabled || (checkpoint === undefined && adapter === undefined)) return null;
+
+  return (
+    <>
+      {checkpoint === undefined ? null : (
+        <Button
+          disabled={pending !== null}
+          size="sm"
+          variant="outline"
+          onClick={() => void continueRun("resume")}
+        >
+          {pending === "resume" ? <Spinner /> : <RotateCcwIcon />}
+          {pending === "resume"
+            ? "Resuming…"
+            : `Resume step ${checkpoint.evidence?.globalStep ?? ""}`}
+        </Button>
+      )}
+      {adapter === undefined ? null : (
+        <Button
+          disabled={pending !== null}
+          size="sm"
+          variant="outline"
+          onClick={() => void continueRun("warm-start")}
+        >
+          {pending === "warm-start" ? <Spinner /> : <GitBranchIcon />}
+          {pending === "warm-start" ? "Starting…" : "Start from adapter"}
+        </Button>
+      )}
+      {error === null ? null : (
+        <span className="basis-full text-right text-destructive text-xs" role="alert">
+          Child run not started: {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+function RunCancellationControl({
+  environmentId,
+  runId,
+  state,
+  onRunsRefresh,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly runId: RlRunId;
+  readonly state: RlRunSummary["state"];
+  readonly onRunsRefresh: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cancelRun = useAtomCommand(rlEnvironment.cancel, { reportFailure: false });
+  const enabled = !isTerminalRlRunState(state) && state !== "cancelling";
+  const cancel = async () => {
+    if (!enabled) return;
+    setPending(true);
+    setError(null);
+    const result = await cancelRun({ environmentId, input: { runId } }).finally(() => {
+      setPending(false);
+    });
+    if (result._tag === "Success") {
+      onRunsRefresh();
+      return;
+    }
+    setError(commandFailureMessage(result));
+  };
+
+  if (!enabled) return null;
+  return (
+    <>
+      <Button
+        disabled={pending}
+        size="sm"
+        variant="destructive-outline"
+        onClick={() => void cancel()}
+      >
+        {pending ? <Spinner /> : <SquareIcon />}
+        {pending ? "Cancelling…" : "Cancel"}
+      </Button>
+      {error === null ? null : (
+        <span className="basis-full text-right text-destructive text-xs" role="alert">
+          Cancellation failed: {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 function RunDetail({
   environmentId,
+  projectId,
   error,
   isPending,
   projection,
@@ -608,9 +881,11 @@ function RunDetail({
   isBaseline,
   onRefresh,
   onRunsRefresh,
+  onStarted,
   onUseAsBaseline,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
   readonly error: string | null;
   readonly isPending: boolean;
   readonly projection: RlRunProjection | null;
@@ -620,12 +895,9 @@ function RunDetail({
   readonly isBaseline: boolean;
   readonly onRefresh: () => void;
   readonly onRunsRefresh: () => void;
+  readonly onStarted: (runId: RlRunId) => void;
   readonly onUseAsBaseline?: (runId: RlRunId) => void;
 }) {
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  const cancelRun = useAtomCommand(rlEnvironment.cancel, { reportFailure: false });
-
   if (projection === null && isPending) {
     return (
       <div className="space-y-4">
@@ -654,20 +926,7 @@ function RunDetail({
     );
   }
 
-  const { summary, manifest, artifacts, metrics } = projection;
-  const canCancel = !isTerminalRlRunState(summary.state) && summary.state !== "cancelling";
-  const handleCancel = async () => {
-    if (!canCancel) return;
-    setIsCancelling(true);
-    setCancelError(null);
-    const result = await cancelRun({ environmentId, input: { runId } });
-    setIsCancelling(false);
-    if (result._tag === "Success") {
-      onRunsRefresh();
-      return;
-    }
-    setCancelError(commandFailureMessage(result));
-  };
+  const { summary, manifest, lineage, artifacts, metrics } = projection;
 
   return (
     <div className="space-y-6">
@@ -691,17 +950,21 @@ function RunDetail({
                   {baselineActionPending ? "Saving…" : isBaseline ? "Baseline" : "Use as baseline"}
                 </Button>
               ) : null}
-              {canCancel ? (
-                <Button
-                  disabled={isCancelling}
-                  size="sm"
-                  variant="destructive-outline"
-                  onClick={() => void handleCancel()}
-                >
-                  {isCancelling ? <Spinner /> : <SquareIcon />}
-                  {isCancelling ? "Cancelling…" : "Cancel"}
-                </Button>
-              ) : null}
+              <RunContinuationControls
+                artifacts={artifacts}
+                enabled={isTerminalRlRunState(summary.state)}
+                environmentId={environmentId}
+                parentRunId={runId}
+                projectId={projectId}
+                onRunsRefresh={onRunsRefresh}
+                onStarted={onStarted}
+              />
+              <RunCancellationControl
+                environmentId={environmentId}
+                runId={runId}
+                state={summary.state}
+                onRunsRefresh={onRunsRefresh}
+              />
             </div>
           </CardAction>
         </CardHeader>
@@ -730,15 +993,42 @@ function RunDetail({
           <AlertDescription>{summary.errorMessage}</AlertDescription>
         </Alert>
       ) : null}
-      {cancelError !== null ? (
-        <Alert variant="error">
-          <AlertCircleIcon />
-          <AlertTitle>Cancellation failed</AlertTitle>
-          <AlertDescription>{cancelError}</AlertDescription>
-        </Alert>
-      ) : null}
+      <RunDetailView
+        artifacts={artifacts}
+        environmentId={environmentId}
+        lineage={lineage}
+        manifest={manifest}
+        metrics={metrics}
+        projection={projection}
+        runId={runId}
+        view={view}
+      />
+    </div>
+  );
+}
 
-      {view === "overview" ? (
+function RunDetailView({
+  artifacts,
+  environmentId,
+  lineage,
+  manifest,
+  metrics,
+  projection,
+  runId,
+  view,
+}: {
+  readonly artifacts: ReadonlyArray<RlArtifactMetadata>;
+  readonly environmentId: EnvironmentId;
+  readonly lineage: RlRunLineage;
+  readonly manifest: RlResolvedManifest | null;
+  readonly metrics: RlRunProjection["metrics"];
+  readonly projection: RlRunProjection;
+  readonly runId: RlRunId;
+  readonly view: RunScopedRlLabView;
+}) {
+  switch (view) {
+    case "overview":
+      return (
         <>
           <section aria-labelledby="rl-metrics-title">
             <div className="mb-3 flex items-end justify-between gap-4">
@@ -758,34 +1048,42 @@ function RunDetail({
               ))}
             </div>
           </section>
-
           <div className="grid gap-4 @[64rem]/rl-lab:grid-cols-2">
             <ManifestCard manifest={manifest} />
-            <ArtifactsCard artifacts={artifacts} environmentId={environmentId} runId={runId} />
+            <ArtifactsCard
+              artifacts={artifacts}
+              environmentId={environmentId}
+              key={runId}
+              runId={runId}
+            />
           </div>
+          <LineageCard lineage={lineage} runId={runId} />
         </>
-      ) : view === "data" ? (
-        <RlDataExplorer metrics={metrics} />
-      ) : view === "algorithm" ? (
+      );
+    case "data":
+      return <RlDataExplorer metrics={metrics} />;
+    case "algorithm":
+      return (
         <RlAlgorithmVisualizer
-          experimentId={summary.experimentId}
-          key={summary.runId}
+          experimentId={projection.summary.experimentId}
+          key={projection.summary.runId}
           manifest={manifest}
           metrics={metrics}
         />
-      ) : view === "behavior" ? (
+      );
+    case "behavior":
+      return (
         <RunBehavior
           artifacts={artifacts}
           environmentId={environmentId}
           llmPostTraining={isLlmPostTrainingRunner(manifest?.runnerId)}
           runId={runId}
-          terminal={isTerminalRlRunState(summary.state)}
+          terminal={isTerminalRlRunState(projection.summary.state)}
         />
-      ) : (
-        <RunDiagnostics projection={projection} />
-      )}
-    </div>
-  );
+      );
+    case "diagnostics":
+      return <RunDiagnostics projection={projection} />;
+  }
 }
 
 function RunBehavior({
@@ -952,6 +1250,60 @@ function ManifestFact({ label, value }: { readonly label: string; readonly value
   );
 }
 
+function LineageCard({
+  lineage,
+  runId,
+}: {
+  readonly lineage: RlRunLineage;
+  readonly runId: RlRunId;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Run lineage</CardTitle>
+        <CardDescription>
+          Immutable parent edges and the exact artifact hash used by each child.
+        </CardDescription>
+      </CardHeader>
+      <CardPanel>
+        <div className="space-y-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-muted/12 px-3 py-2.5">
+            <GitBranchIcon className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{runId}</span>
+            <Badge size="sm" variant="secondary">
+              Current
+            </Badge>
+          </div>
+          {lineage.edges.length === 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">Root run — no parent artifact.</p>
+          ) : (
+            lineage.edges.map((edge) => (
+              <div
+                className="ml-4 min-w-0 border-l border-border/70 py-1 pl-4"
+                key={edge.childRunId}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+                  <Badge size="sm" variant="outline">
+                    {edge.relation === "resume" ? "Exact resume" : "Adapter warm start"}
+                  </Badge>
+                  <span className="truncate font-mono">{edge.parentRunId}</span>
+                </div>
+                <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                  step {edge.sourceStep} · {edge.sourceArtifactId} · sha256:
+                  {edge.sourceArtifactSha256.slice(0, 12)}
+                </div>
+              </div>
+            ))
+          )}
+          {lineage.truncated ? (
+            <p className="px-1 text-xs text-muted-foreground">Older ancestors were truncated.</p>
+          ) : null}
+        </div>
+      </CardPanel>
+    </Card>
+  );
+}
+
 function ArtifactsCard({
   artifacts,
   environmentId,
@@ -961,20 +1313,68 @@ function ArtifactsCard({
   readonly environmentId: EnvironmentId;
   readonly runId: RlRunId;
 }) {
+  const [cursors, setCursors] = useState<ReadonlyArray<RlArtifactId | undefined>>([undefined]);
+  const cursor = cursors.at(-1);
+  const pageAtom = rlEnvironment.artifacts({
+    environmentId,
+    input: {
+      runId,
+      limit: RL_MAX_ARTIFACT_PAGE_SIZE,
+      ...(cursor === undefined ? {} : { cursor }),
+    },
+  });
+  const page = useEnvironmentQuery(pageAtom);
+  const pageData = page.data;
+  const visibleArtifacts =
+    pageData === undefined || pageData === null
+      ? artifacts
+      : cursor === undefined
+        ? mergeRlArtifactInventory(pageData.artifacts, artifacts, RL_MAX_ARTIFACT_PAGE_SIZE)
+        : pageData.artifacts;
+  const nextCursor = pageData?.nextCursor ?? null;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Artifacts</CardTitle>
-        <CardDescription>Signed, run-scoped outputs from the server.</CardDescription>
+        <CardDescription>Server-verified, run-scoped outputs.</CardDescription>
+        <CardAction className="flex items-center gap-1">
+          <span className="mr-1 text-[10px] text-muted-foreground">Page {cursors.length}</span>
+          <Button
+            aria-label="Previous artifact page"
+            disabled={cursors.length === 1 || page.isPending}
+            size="icon-xs"
+            variant="ghost-muted"
+            onClick={() => setCursors((current) => current.slice(0, -1))}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <Button
+            aria-label="Next artifact page"
+            disabled={nextCursor === null || page.isPending}
+            size="icon-xs"
+            variant="ghost-muted"
+            onClick={() => {
+              if (nextCursor !== null) setCursors((current) => [...current, nextCursor]);
+            }}
+          >
+            <ChevronRightIcon />
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardPanel>
-        {artifacts.length === 0 ? (
+        {page.error !== null && page.error !== undefined ? (
+          <p className="mb-2 text-xs text-destructive">
+            Artifact inventory could not be refreshed.
+          </p>
+        ) : null}
+        {visibleArtifacts.length === 0 ? (
           <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
             Artifacts appear here as the worker produces them.
           </div>
         ) : (
           <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70">
-            {artifacts.map((artifact) => (
+            {visibleArtifacts.map((artifact) => (
               <ArtifactRow
                 artifact={artifact}
                 environmentId={environmentId}
@@ -1014,9 +1414,22 @@ function ArtifactRow({
           <Badge size="sm" variant="outline">
             {formatRlBytes(artifact.bytes)}
           </Badge>
+          {artifact.evidence?._tag === "Checkpoint" ? (
+            <Badge size="sm" variant={artifact.state === "ready" ? "success" : "outline"}>
+              {artifact.state === "ready" ? "Exact resume" : artifact.state}
+            </Badge>
+          ) : artifact.evidence?._tag === "Adapter" ? (
+            <Badge size="sm" variant="secondary">
+              PEFT adapter
+            </Badge>
+          ) : null}
         </div>
         <div className="truncate font-mono text-[10px] text-muted-foreground">
-          {artifact.artifactId}
+          {artifact.logicalName ?? artifact.artifactId}
+          {artifact.evidence === undefined || artifact.evidence === null
+            ? ""
+            : ` · step ${artifact.evidence.globalStep}`}{" "}
+          · {formatRlArtifactIdentity(artifact)}
         </div>
       </div>
       {urlState._tag === "Success" ? (

@@ -76,6 +76,29 @@ describe("RlRunState", () => {
 });
 
 describe("RlArtifactMetadata", () => {
+  it("keeps legacy artifacts readable and validates verified identity", () => {
+    const legacy = {
+      artifactId: "artifact_legacy",
+      kind: "summary",
+      bytes: 10,
+      contentType: "application/json",
+      producedAt: "2026-08-24T00:00:00.000Z",
+    };
+    expect(decodes(RlArtifactMetadata, legacy)).toBe(true);
+    expect(
+      decodes(RlArtifactMetadata, {
+        ...legacy,
+        sha256: "a".repeat(64),
+        logicalName: "summary.json",
+        format: "json",
+        state: "ready",
+        checkpointStep: null,
+        fileCount: 1,
+      }),
+    ).toBe(true);
+    expect(decodes(RlArtifactMetadata, { ...legacy, sha256: "not-a-hash" })).toBe(false);
+  });
+
   it("rejects an artifact id that looks like a path", () => {
     expect(
       decodes(RlArtifactMetadata, {
@@ -108,11 +131,14 @@ describe("RlRunSummary", () => {
 });
 
 describe("RL RPC surface", () => {
-  it("declares the six run kernel methods", () => {
+  it("declares the paginated run kernel methods", () => {
     expect(WS_METHODS.rlCapabilities).toBe("rl.capabilities");
     expect(WS_METHODS.rlListRuns).toBe("rl.listRuns");
     expect(WS_METHODS.rlGetRun).toBe("rl.getRun");
+    expect(WS_METHODS.rlListArtifacts).toBe("rl.listArtifacts");
     expect(WS_METHODS.rlStartRun).toBe("rl.startRun");
+    expect(WS_METHODS.rlResumeRun).toBe("rl.resumeRun");
+    expect(WS_METHODS.rlWarmStartRun).toBe("rl.warmStartRun");
     expect(WS_METHODS.rlCancelRun).toBe("rl.cancelRun");
     expect(WS_METHODS.rlSubscribeRun).toBe("rl.subscribeRun");
   });

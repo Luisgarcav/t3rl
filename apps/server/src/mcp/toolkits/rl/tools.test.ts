@@ -18,11 +18,18 @@ it("exports every RL Lab utility with closed-world annotations", () => {
     "rl_cancel_run",
     "rl_capabilities",
     "rl_compare_runs",
+    "rl_compare_study",
+    "rl_create_study",
     "rl_get_run",
+    "rl_get_study",
+    "rl_list_artifacts",
     "rl_list_runs",
     "rl_query_metrics",
     "rl_read_artifact",
+    "rl_resume_run",
     "rl_start_run",
+    "rl_validate_experiment",
+    "rl_warm_start_run",
   ]);
 
   for (const tool of Object.values(RlToolkit.tools)) {
@@ -38,7 +45,13 @@ it("exports every RL Lab utility with closed-world annotations", () => {
     }
   }
 
-  for (const name of ["rl_start_run", "rl_cancel_run"] as const) {
+  for (const name of [
+    "rl_start_run",
+    "rl_cancel_run",
+    "rl_resume_run",
+    "rl_warm_start_run",
+    "rl_create_study",
+  ] as const) {
     const tool = RlToolkit.tools[name];
     expect(Context.get(tool.annotations, Tool.Readonly)).toBe(false);
     expect(Context.get(tool.annotations, Tool.Destructive)).toBe(true);
@@ -50,9 +63,13 @@ it("exports every RL Lab utility with closed-world annotations", () => {
     "rl_capabilities",
     "rl_list_runs",
     "rl_get_run",
+    "rl_get_study",
+    "rl_list_artifacts",
     "rl_query_metrics",
     "rl_compare_runs",
+    "rl_compare_study",
     "rl_read_artifact",
+    "rl_validate_experiment",
   ] as const) {
     const tool = RlToolkit.tools[name];
     expect(Context.get(tool.annotations, Tool.Readonly)).toBe(true);

@@ -193,19 +193,30 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import {
+  RlArtifactId,
   RlArtifactMetadata,
+  RlArtifactPage,
   RlCapabilityReport,
   RlExperimentId,
+  RlExperimentValidationReport,
   RlMetricBatch,
   RlResolvedManifest,
+  RlRunLineage,
   RlRunId,
   RlRunNotFoundError,
   RlRunRequestId,
   RlRunStartError,
   RlRunState,
   RlRunSummary,
+  RlStudy,
+  RlStudyComparison,
+  RlStudyDefinition,
+  RlStudyEstimator,
+  RlStudyId,
+  RlStudyNotFoundError,
   RlSubscriptionEvent,
-  RL_MAX_RUN_ARTIFACTS,
+  RL_MAX_SNAPSHOT_ARTIFACTS,
+  RL_MAX_ARTIFACT_PAGE_SIZE,
   RL_MAX_SNAPSHOT_METRIC_BATCHES,
 } from "./rl.ts";
 import { VcsError } from "./vcs.ts";
@@ -322,9 +333,16 @@ export const WS_METHODS = {
   // RL lab methods
   rlCapabilities: "rl.capabilities",
   rlListRuns: "rl.listRuns",
+  rlListArtifacts: "rl.listArtifacts",
   rlGetRun: "rl.getRun",
   rlStartRun: "rl.startRun",
+  rlResumeRun: "rl.resumeRun",
+  rlWarmStartRun: "rl.warmStartRun",
   rlCancelRun: "rl.cancelRun",
+  rlCreateStudy: "rl.createStudy",
+  rlGetStudy: "rl.getStudy",
+  rlCompareStudy: "rl.compareStudy",
+  rlValidateExperiment: "rl.validateExperiment",
 
   // Streaming subscriptions
   rlSubscribeRun: "rl.subscribeRun",
@@ -1029,9 +1047,26 @@ export const WsRlGetRunRpc = Rpc.make(WS_METHODS.rlGetRun, {
   success: Schema.Struct({
     summary: RlRunSummary,
     manifest: Schema.NullOr(RlResolvedManifest),
-    artifacts: Schema.Array(RlArtifactMetadata).check(Schema.isMaxLength(RL_MAX_RUN_ARTIFACTS)),
+    lineage: RlRunLineage,
+    artifacts: Schema.Array(RlArtifactMetadata).check(
+      Schema.isMaxLength(RL_MAX_SNAPSHOT_ARTIFACTS),
+    ),
     metrics: Schema.Array(RlMetricBatch).check(Schema.isMaxLength(RL_MAX_SNAPSHOT_METRIC_BATCHES)),
   }),
+  error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlListArtifactsRpc = Rpc.make(WS_METHODS.rlListArtifacts, {
+  payload: Schema.Struct({
+    runId: RlRunId,
+    cursor: Schema.optional(RlArtifactId),
+    limit: Schema.optional(
+      Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(
+        Schema.isLessThanOrEqualTo(RL_MAX_ARTIFACT_PAGE_SIZE),
+      ),
+    ),
+  }),
+  success: RlArtifactPage,
   error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
 });
 
@@ -1046,10 +1081,60 @@ export const WsRlStartRunRpc = Rpc.make(WS_METHODS.rlStartRun, {
   error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),
 });
 
+const RlContinueRunPayload = Schema.Struct({
+  projectId: TrimmedNonEmptyString,
+  parentRunId: RlRunId,
+  sourceArtifactId: RlArtifactId,
+  requestId: RlRunRequestId,
+  targetExperimentId: Schema.optional(RlExperimentId),
+});
+
+export const WsRlResumeRunRpc = Rpc.make(WS_METHODS.rlResumeRun, {
+  payload: RlContinueRunPayload,
+  success: Schema.Struct({ runId: RlRunId }),
+  error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlWarmStartRunRpc = Rpc.make(WS_METHODS.rlWarmStartRun, {
+  payload: RlContinueRunPayload,
+  success: Schema.Struct({ runId: RlRunId }),
+  error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),
+});
+
 export const WsRlCancelRunRpc = Rpc.make(WS_METHODS.rlCancelRun, {
   payload: Schema.Struct({ runId: RlRunId }),
   success: Schema.Struct({ state: RlRunState }),
   error: Schema.Union([RlRunNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlCreateStudyRpc = Rpc.make(WS_METHODS.rlCreateStudy, {
+  payload: Schema.Struct({ projectId: TrimmedNonEmptyString, definition: RlStudyDefinition }),
+  success: RlStudy,
+  error: Schema.Union([RlRunStartError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlGetStudyRpc = Rpc.make(WS_METHODS.rlGetStudy, {
+  payload: Schema.Struct({ studyId: RlStudyId }),
+  success: RlStudy,
+  error: Schema.Union([RlStudyNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlCompareStudyRpc = Rpc.make(WS_METHODS.rlCompareStudy, {
+  payload: Schema.Struct({
+    studyId: RlStudyId,
+    baselineLabel: Schema.String,
+    candidateLabel: Schema.String,
+    metricKey: Schema.String,
+    estimator: RlStudyEstimator,
+  }),
+  success: RlStudyComparison,
+  error: Schema.Union([RlStudyNotFoundError, EnvironmentAuthorizationError]),
+});
+
+export const WsRlValidateExperimentRpc = Rpc.make(WS_METHODS.rlValidateExperiment, {
+  payload: Schema.Struct({ projectId: TrimmedNonEmptyString, experimentId: RlExperimentId }),
+  success: RlExperimentValidationReport,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsRlSubscribeRunRpc = Rpc.make(WS_METHODS.rlSubscribeRun, {
@@ -1162,7 +1247,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsRlCapabilitiesRpc,
   WsRlListRunsRpc,
   WsRlGetRunRpc,
+  WsRlListArtifactsRpc,
   WsRlStartRunRpc,
+  WsRlResumeRunRpc,
+  WsRlWarmStartRunRpc,
   WsRlCancelRunRpc,
+  WsRlCreateStudyRpc,
+  WsRlGetStudyRpc,
+  WsRlCompareStudyRpc,
+  WsRlValidateExperimentRpc,
   WsRlSubscribeRunRpc,
 );

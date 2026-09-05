@@ -1,0 +1,9 @@
+{
+  "fixture": "100 validations of 1 MiB dataset + definition + verifier",
+  "elapsedMs": 55.38876500000001,
+  "rssDeltaBytes": 131072,
+  "sqliteWrites": 0,
+  "websocketValidationBytes": 246,
+  "runSnapshotGrowthBytes": 1048685,
+  "rendererValidationObjects": 1
+}

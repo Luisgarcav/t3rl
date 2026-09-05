@@ -1,0 +1,10 @@
+{
+  "fixture": "32 seeds x 128 paired samples x 10000 resamples",
+  "elapsedMs": 6248.999862000001,
+  "rssDeltaBytes": 13688832,
+  "sqliteWritesPerStudy": 65,
+  "websocketComparisonBytes": 737,
+  "artifactGrowthBytes": 0,
+  "rendererComparisonObjects": 1,
+  "pairedDelta": 0.10000000000000006
+}

@@ -167,14 +167,21 @@ const buildCmd = Command.make(
       yield* fs.remove(workerTarget, { recursive: true, force: true });
       yield* fs.makeDirectory(workerTarget, { recursive: true });
       yield* Effect.all(
-        ["fake_worker.py", "sb3_worker.py"].map((file) =>
-          fs.copyFile(path.join(workerSource, file), path.join(workerTarget, file)),
-        ),
+        [
+          "axolotl_reward.py",
+          "axolotl_worker.py",
+          "fake_worker.py",
+          "rlvr.py",
+          "sb3_worker.py",
+          "trl_worker.py",
+        ].map((file) => fs.copyFile(path.join(workerSource, file), path.join(workerTarget, file))),
         { discard: true },
       );
-      yield* fs.copy(
-        path.join(workerSource, "experiments"),
-        path.join(workerTarget, "experiments"),
+      yield* Effect.all(
+        ["datasets", "experiments"].map((directory) =>
+          fs.copy(path.join(workerSource, directory), path.join(workerTarget, directory)),
+        ),
+        { discard: true },
       );
       yield* Effect.log("[cli] Bundled T3RL workers into dist/t3rl_worker");
 
@@ -244,7 +251,12 @@ const publishCmd = Command.make(
         "dist/service-launcher.mjs",
         "dist/client/index.html",
         "dist/t3rl_worker/experiments/cartpole-ppo.json",
+        "dist/t3rl_worker/experiments/arithmetic-grpo-rlvr-v2.json",
+        "dist/t3rl_worker/experiments/arithmetic-grpo-axolotl-v2.json",
+        "dist/t3rl_worker/datasets/arithmetic-rlvr-v2.json",
         "dist/t3rl_worker/sb3_worker.py",
+        "dist/t3rl_worker/trl_worker.py",
+        "dist/t3rl_worker/axolotl_worker.py",
       ]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {

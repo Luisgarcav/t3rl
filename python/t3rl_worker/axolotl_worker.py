@@ -17,28 +17,40 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import threading
 import traceback
 from typing import Any
 
 import axolotl_reward
-
+from checkpointing import (
+    CheckpointPublisher,
+    checkpoint_policy,
+    compatibility,
+    dataset_cursor,
+    evaluate_before_training,
+    model_identity,
+    transformers_checkpoint_callback,
+)
 from rlvr import (
-    EvidenceLedger,
     PROTOCOL_VERSION,
     SUPPORTED_DATASET,
     SUPPORTED_DATASETS,
     SUPPORTED_MODEL,
     SUPPORTED_MODEL_REVISION,
     VERIFIER_ID,
+    EvidenceLedger,
     _boolean,
     _float,
     _int,
     _string,
+    atomic_write_bytes,
     emit,
     has_observed_metric,
     load_builtin_dataset,
+    load_project_dataset,
+    load_project_verifier,
     make_exact_integer_reward,
     normalize_grpo_metrics,
     order_replay_samples,
@@ -65,7 +77,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "worldSize": 1,
     "modelId": SUPPORTED_MODEL,
     "modelRevision": SUPPORTED_MODEL_REVISION,
+    "tokenizerRevision": SUPPORTED_MODEL_REVISION,
+    "quantization": "none",
+    "precision": "bf16",
+    "loraRank": 16,
+    "loraAlpha": 32.0,
+    "loraDropout": 0.05,
+    "loraBias": "none",
+    "loraTargetModules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    "loraModulesToSave": [],
+    "useRslora": False,
+    "checkpointCadenceSteps": 4,
+    "maxIntermediateCheckpoints": 2,
+    "keepBest": False,
+    "keepFinal": True,
+    "gracefulCheckpointDeadlineSeconds": 30,
     "datasetId": SUPPORTED_DATASET,
+    "projectDatasetPath": None,
+    "projectVerifierPath": None,
     "systemPrompt": "Answer the arithmetic question. Return only the final integer.",
     "maxSteps": 8,
     "learningRate": 0.000005,
@@ -109,10 +146,16 @@ def resolve_config(raw: Any) -> dict[str, Any]:
     }.items():
         if config[key] != expected:
             raise ValueError(f"{key} must be {expected}")
-    if config["datasetId"] not in SUPPORTED_DATASETS:
+    if config["projectDatasetPath"] is None and config["datasetId"] not in SUPPORTED_DATASETS:
         raise ValueError(f"datasetId must be one of {sorted(SUPPORTED_DATASETS)}")
+    for name in ("projectDatasetPath", "projectVerifierPath"):
+        if config[name] is not None:
+            config[name] = _string(name, config[name], 2048)
 
     config["modelRevision"] = _string("modelRevision", config["modelRevision"], 128)
+    config["tokenizerRevision"] = _string(
+        "tokenizerRevision", config["tokenizerRevision"], 128
+    )
     config["systemPrompt"] = _string("systemPrompt", config["systemPrompt"], 1024)
     for name, maximum in {
         "maxSteps": 10_000,
@@ -128,6 +171,9 @@ def resolve_config(raw: Any) -> dict[str, Any]:
         "retainSampleCount": 256,
         "maxGeneratedTokens": 100_000_000,
         "maxWallClockSeconds": 86_400,
+        "loraRank": 4096,
+        "checkpointCadenceSteps": 1_000_000,
+        "gracefulCheckpointDeadlineSeconds": 3600,
     }.items():
         config[name] = _int(name, config[name], 1, maximum)
     for name, minimum, maximum in [
@@ -135,18 +181,58 @@ def resolve_config(raw: Any) -> dict[str, Any]:
         ("temperature", 0.01, 10.0),
         ("beta", 0.0, 10.0),
         ("maxGpuHours", 0.001, 24.0),
+        ("loraAlpha", 0.0, 1_000_000.0),
+        ("loraDropout", 0.0, 1.0),
     ]:
         config[name] = _float(name, config[name], minimum, maximum)
     config["worldSize"] = _int("worldSize", config["worldSize"], 1, 4096)
     if config["worldSize"] != 1:
         raise ValueError("the direct Axolotl adapter currently requires worldSize=1")
-    for name in ["gradientCheckpointing", "useVllm", "requireCuda"]:
+    config["maxIntermediateCheckpoints"] = _int(
+        "maxIntermediateCheckpoints", config["maxIntermediateCheckpoints"], 0, 64
+    )
+    for name in [
+        "gradientCheckpointing",
+        "useVllm",
+        "requireCuda",
+        "keepBest",
+        "keepFinal",
+        "useRslora",
+    ]:
         config[name] = _boolean(name, config[name])
     if config["useVllm"]:
         # Axolotl's GRPO documentation presents vLLM as required; its schema
         # defaults `use_vllm` to false and guards every vLLM call behind it.
         # The sidecar is a later, separately supervised increment.
         raise ValueError("useVllm is not supported by the first Axolotl adapter")
+    if config["keepBest"]:
+        raise ValueError(
+            "keepBest requires a declared selection metric and is not enabled here"
+        )
+    if config["quantization"] != "none":
+        raise ValueError("the current Axolotl adapter supports quantization=none")
+    if config["tokenizerRevision"] != config["modelRevision"]:
+        raise ValueError("the Axolotl adapter requires tokenizerRevision=modelRevision")
+    if config["precision"] not in {"fp32", "fp16", "bf16"}:
+        raise ValueError("precision must be fp32, fp16, or bf16")
+    if config["loraBias"] != "none":
+        raise ValueError("the current Axolotl adapter requires loraBias=none")
+    for name, minimum in [("loraTargetModules", 1), ("loraModulesToSave", 0)]:
+        value = config[name]
+        if (
+            not isinstance(value, list)
+            or not minimum <= len(value) <= 128
+            or any(
+                not isinstance(module, str) or not module.strip() or len(module) > 128
+                for module in value
+            )
+        ):
+            raise ValueError(f"{name} must contain {minimum} to 128 module names")
+        config[name] = [module.strip() for module in value]
+    if config["keepFinal"] and config["maxSteps"] % config["checkpointCadenceSteps"]:
+        raise ValueError(
+            "checkpointCadenceSteps must divide maxSteps when keepFinal is true"
+        )
 
     if config["evaluationNumGenerations"] != config["numGenerations"]:
         # Axolotl's schema exposes only `num_generations`. TRL's separate
@@ -164,6 +250,10 @@ def resolve_config(raw: Any) -> dict[str, Any]:
     if effective_batch % config["numGenerations"] != 0:
         raise ValueError(
             "perDeviceTrainBatchSize × gradientAccumulationSteps must be divisible by numGenerations"
+        )
+    if config["evaluationBatchSize"] % config["evaluationNumGenerations"] != 0:
+        raise ValueError(
+            "evaluationBatchSize must be divisible by evaluationNumGenerations"
         )
     training_token_bound = (
         config["maxSteps"]
@@ -196,6 +286,8 @@ def build_axolotl_config(
     train_path: str,
     eval_path: str,
     seed: int = 0,
+    resume_checkpoint: str | None = None,
+    warm_start_adapter: str | None = None,
 ) -> dict[str, Any]:
     """
     Translates the bounded experiment config into an Axolotl config.
@@ -208,6 +300,17 @@ def build_axolotl_config(
     return {
         "base_model": config["modelId"],
         "revision_of_model": config["modelRevision"],
+        "adapter": "lora",
+        "lora_r": config["loraRank"],
+        "lora_alpha": config["loraAlpha"],
+        "lora_dropout": config["loraDropout"],
+        "lora_target_modules": config["loraTargetModules"],
+        "lora_modules_to_save": config["loraModulesToSave"] or None,
+        "peft_use_rslora": config["useRslora"],
+        "lora_model_dir": warm_start_adapter,
+        "resume_from_checkpoint": resume_checkpoint,
+        "load_in_4bit": False,
+        "load_in_8bit": False,
         "rl": "grpo",
         "trl": {
             "use_vllm": False,
@@ -221,9 +324,9 @@ def build_axolotl_config(
         "test_datasets": [{**dataset, "path": eval_path}],
         "max_steps": config["maxSteps"],
         "num_epochs": 1,
-        # Axolotl prepares the model inside train(), so both evaluations are
-        # driven by the trainer rather than called around it.
-        "eval_on_start": True,
+        # The worker performs the starting evaluation after setup so an exact
+        # resume can preload checkpoint weights before measuring its baseline.
+        "eval_on_start": False,
         "eval_strategy": "steps",
         "eval_steps": config["maxSteps"],
         # The verifier reads `answer` and `evidencePhase` off each row, so the
@@ -243,9 +346,13 @@ def build_axolotl_config(
         # which would write outside the run directory the worker owns.
         "dataset_prepared_path": os.path.join(run_dir, "prepared"),
         "seed": seed,
-        # This slice retains no checkpoint, matching the TRL adapter.
-        "save_strategy": "no",
-        "bf16": True,
+        "save_strategy": "steps",
+        "save_steps": config["checkpointCadenceSteps"],
+        "save_total_limit": max(1, config["maxIntermediateCheckpoints"] + 2),
+        "save_only_model": False,
+        "save_safetensors": True,
+        "bf16": config["precision"] == "bf16",
+        "fp16": config["precision"] == "fp16",
     }
 
 
@@ -254,6 +361,7 @@ def dataset_rows(
 ) -> list[dict[str, Any]]:
     return [
         {
+            "sampleId": row["sampleId"],
             "prompt": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": row["prompt"]},
@@ -266,17 +374,15 @@ def dataset_rows(
 
 
 def write_jsonl(path: str, rows: list[dict[str, Any]]) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
+    contents = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    atomic_write_bytes(path, contents.encode())
 
 
 def current_phase(requested_phase: str) -> str:
     """
-    Axolotl runs both evaluations inside `train()`, so the phase is read from
-    the dataset column and the live optimizer step rather than from the call
-    order. TRL 1.8 does not hand reward functions a trainer state.
+    Axolotl's reward bridge reads the dataset column and live optimizer step
+    rather than relying on evaluation call order. TRL does not hand reward
+    functions a trainer state through this integration.
     """
     if requested_phase != "evaluation":
         return "training"
@@ -306,18 +412,12 @@ def run(args: argparse.Namespace) -> int:
     global LEDGER, TRAINER
 
     import hashlib
-    import importlib.metadata as metadata
     import platform
     import random
     import time
     from contextlib import redirect_stdout
+    from importlib import metadata
 
-    started = time.monotonic()
-    # Axolotl and its dependencies write warnings to stdout while importing, and
-    # stdout is the versioned protocol stream. rlvr captured the real protocol
-    # handle at import time, so emit() is unaffected by this redirect.
-    with redirect_stdout(sys.stderr):
-        deps = load_dependencies()
     runner_version = metadata.version("axolotl")
     emit(
         {
@@ -328,11 +428,26 @@ def run(args: argparse.Namespace) -> int:
         }
     )
     args.hello_sent = True
+    if args.resume_checkpoint is not None and args.warm_start_adapter is not None:
+        raise ValueError(
+            "resume checkpoint and warm-start adapter are mutually exclusive"
+        )
+
+    started = time.monotonic()
+    # Axolotl and its dependencies write warnings to stdout while importing, and
+    # stdout is the versioned protocol stream. rlvr captured the real protocol
+    # handle at import time, so emit() is unaffected by this redirect.
+    with redirect_stdout(sys.stderr):
+        deps = load_dependencies()
 
     config = resolve_config(args.config_json)
     torch = deps["torch"]
     if config["requireCuda"] and not torch.cuda.is_available():
         raise RuntimeError("this bundled GRPO experiment requires a CUDA GPU")
+    if config["precision"] == "bf16" and not (
+        torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    ):
+        raise RuntimeError("precision=bf16 requires a CUDA device with bf16 support")
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -340,7 +455,16 @@ def run(args: argparse.Namespace) -> int:
         torch.cuda.manual_seed_all(args.seed)
 
     os.makedirs(args.run_dir, exist_ok=True)
-    source_records, dataset_sha = load_builtin_dataset(config["datasetId"])
+    source_records, dataset_sha = (
+        load_project_dataset(config["projectDatasetPath"])
+        if config["projectDatasetPath"] is not None
+        else load_builtin_dataset(config["datasetId"])
+    )
+    project_verifier = (
+        load_project_verifier(config["projectVerifierPath"])
+        if config["projectVerifierPath"] is not None
+        else None
+    )
     training_records, evaluation_records = split_dataset(
         source_records, config["evaluationRows"]
     )
@@ -350,12 +474,13 @@ def run(args: argparse.Namespace) -> int:
         train_path, dataset_rows(training_records, config["systemPrompt"], "training")
     )
     write_jsonl(
-        eval_path, dataset_rows(evaluation_records, config["systemPrompt"], "evaluation")
+        eval_path,
+        dataset_rows(evaluation_records, config["systemPrompt"], "evaluation"),
     )
 
     LEDGER = EvidenceLedger(config["retainSampleCount"])
     axolotl_reward.REWARD = make_exact_integer_reward(
-        LEDGER, phase_resolver=current_phase
+        LEDGER, phase_resolver=current_phase, verifier=project_verifier
     )
 
     evidence = {
@@ -366,17 +491,30 @@ def run(args: argparse.Namespace) -> int:
         "transformers": metadata.version("transformers"),
         "torch": metadata.version("torch"),
         "accelerate": metadata.version("accelerate"),
+        "peft": metadata.version("peft"),
     }
     evidence["fingerprint"] = hashlib.sha256(
         json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+    model = model_identity(
+        config,
+        resolved_revision=config["modelRevision"],
+        tokenizer_revision=config["tokenizerRevision"],
+    )
+    policy = checkpoint_policy(config)
+    compatibility_evidence = compatibility(
+        model=model, framework_id=RUNNER_ID, framework_version=runner_version
+    )
     emit(
         {
             "type": "manifest",
+            "model": model,
+            "checkpointPolicy": policy,
             "values": {
                 **config,
                 "seed": args.seed,
                 "modelRevisionResolved": config["modelRevision"],
+                "tokenizerRevisionResolved": config["tokenizerRevision"],
                 "datasetSha256": dataset_sha,
                 "datasetRows": len(source_records),
                 "trainingRows": len(training_records),
@@ -397,6 +535,13 @@ def run(args: argparse.Namespace) -> int:
 
     latest_step = 0
     evaluation_passes = 0
+    publisher = CheckpointPublisher(
+        run_dir=args.run_dir,
+        compatibility_evidence=compatibility_evidence,
+        policy=policy,
+        emit_artifact=emit,
+    )
+    publisher.install_signal_handlers()
 
     class MetricsCallback(deps["TrainerCallback"]):  # type: ignore[misc]
         def on_log(self, callback_args, state, control, logs=None, **_):
@@ -434,6 +579,8 @@ def run(args: argparse.Namespace) -> int:
         train_path=train_path,
         eval_path=eval_path,
         seed=args.seed,
+        resume_checkpoint=args.resume_checkpoint,
+        warm_start_adapter=args.warm_start_adapter,
     )
     write_json(args.run_dir, "axolotl-config.json", axolotl_config)
     emit({"type": "artifact", "kind": "config", "path": "axolotl-config.json"})
@@ -461,10 +608,47 @@ def run(args: argparse.Namespace) -> int:
             ](cfg, dataset_meta)
             TRAINER = trainer
             trainer.add_callback(MetricsCallback())
-            trainer.train()
+            checkpoint_callback = transformers_checkpoint_callback(
+                callback_base=deps["TrainerCallback"],
+                publisher=publisher,
+                trainer_output_dir=axolotl_config["output_dir"],
+                max_steps=config["maxSteps"],
+                effective_batch_size=(
+                    config["perDeviceTrainBatchSize"]
+                    * config["gradientAccumulationSteps"]
+                    * config["worldSize"]
+                ),
+            )
+            trainer.add_callback(checkpoint_callback)
+            evaluate_before_training(trainer, args.resume_checkpoint)
+            trainer.train(resume_from_checkpoint=args.resume_checkpoint)
+            if not publisher.shutdown_requested.is_set():
+                final_step = int(getattr(trainer.state, "global_step", latest_step))
+                final_cursor = dataset_cursor(
+                    global_step=final_step,
+                    epoch=getattr(trainer.state, "epoch", None),
+                    effective_batch_size=(
+                        config["perDeviceTrainBatchSize"]
+                        * config["gradientAccumulationSteps"]
+                        * config["worldSize"]
+                    ),
+                )
+                publisher.publish_adapter(
+                    save=lambda directory: trainer.model.save_pretrained(
+                        directory, safe_serialization=True
+                    ),
+                    global_step=final_step,
+                    tokens_seen=checkpoint_callback.tokens_seen,
+                    cursor=final_cursor,
+                )
     finally:
         stop_heartbeat.set()
         heartbeat_thread.join(timeout=2)
+        shutil.rmtree(axolotl_config["output_dir"], ignore_errors=True)
+        shutil.rmtree(axolotl_config["dataset_prepared_path"], ignore_errors=True)
+
+    if publisher.shutdown_requested.is_set():
+        return 0
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     training = LEDGER.summarize("training")
@@ -474,7 +658,8 @@ def run(args: argparse.Namespace) -> int:
     after_rate = evaluation_after["verifierPassRate"]
     delta = (
         float(after_rate) - float(before_rate)
-        if isinstance(before_rate, (int, float)) and isinstance(after_rate, (int, float))
+        if isinstance(before_rate, (int, float))
+        and isinstance(after_rate, (int, float))
         else None
     )
 
@@ -498,7 +683,8 @@ def run(args: argparse.Namespace) -> int:
             "evaluationPassRateDelta": delta,
             "retainedSamples": LEDGER.retained_count,
             "elapsedMs": elapsed_ms,
-            "checkpointRetained": False,
+            "checkpointRetained": config["keepFinal"],
+            "adapterPublished": True,
             "budgets": {
                 "maxGeneratedTokens": config["maxGeneratedTokens"],
                 "maxWallClockSeconds": config["maxWallClockSeconds"],
@@ -539,6 +725,8 @@ def run(args: argparse.Namespace) -> int:
                     {
                         "step": index,
                         "observation": {
+                            "sampleId": sample["sampleId"],
+                            "generationIndex": sample["generationIndex"],
                             "phase": sample["phase"],
                             "prompt": sample["prompt"],
                             "expected": sample["expected"],
@@ -563,8 +751,8 @@ def run(args: argparse.Namespace) -> int:
 
 
 def probe() -> int:
-    import importlib.metadata as metadata
     import platform
+    from importlib import metadata
 
     import torch
 
@@ -589,6 +777,8 @@ def main() -> int:
     parser.add_argument("--run-dir")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--config-json", type=json.loads, default={})
+    parser.add_argument("--resume-checkpoint")
+    parser.add_argument("--warm-start-adapter")
     args = parser.parse_args()
     args.hello_sent = False
     if args.probe:

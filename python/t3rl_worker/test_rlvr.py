@@ -1,6 +1,7 @@
 import io
 import json
 import math
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -50,13 +51,17 @@ class RlvrUnitTest(unittest.TestCase):
         )
 
     def test_exact_integer_verifier_uses_the_final_integer(self) -> None:
-        self.assertEqual(
-            rlvr.extract_final_integer("Work: 5 + 7. Final: 12"), "12"
-        )
+        self.assertEqual(rlvr.extract_final_integer("Work: 5 + 7. Final: 12"), "12")
         self.assertEqual(rlvr.extract_final_integer("-1,024"), "-1024")
+        self.assertEqual(rlvr.extract_final_integer("The answer is 42."), "42")
+        self.assertEqual(rlvr.extract_final_integer("The answer is 1,234."), "1234")
         self.assertIsNone(rlvr.extract_final_integer("no integer"))
         self.assertIsNone(rlvr.extract_final_integer("4e42"))
         self.assertIsNone(rlvr.extract_final_integer("answer42"))
+        self.assertIsNone(rlvr.extract_final_integer("12,34"))
+        self.assertIsNone(rlvr.extract_final_integer("42.5"))
+        self.assertIsNone(rlvr.extract_final_integer("84/7"))
+        self.assertIsNone(rlvr.extract_final_integer("41-42"))
 
         ledger = rlvr.EvidenceLedger(6)
         reward = rlvr.make_exact_integer_reward(ledger)
@@ -68,6 +73,8 @@ class RlvrUnitTest(unittest.TestCase):
         self.assertEqual(values, [1.0, 0.0, 0.0])
         samples = ledger.samples
         self.assertEqual(samples[0]["verifier"]["id"], "exact-integer-v2")
+        self.assertRegex(samples[0]["sampleId"], r"^sample_[0-9a-f]{24}$")
+        self.assertEqual(samples[0]["generationIndex"], 0)
         self.assertTrue(samples[0]["verifier"]["passed"])
         self.assertFalse(samples[1]["verifier"]["passed"])
         self.assertEqual(samples[0]["phase"], "training")
@@ -146,7 +153,9 @@ class RlvrUnitTest(unittest.TestCase):
         records, digest = rlvr.load_builtin_dataset("arithmetic-rlvr-v1")
         self.assertEqual(len(records), 16)
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
-        self.assertEqual(records[0], {"prompt": "What is 7 + 5?", "answer": "12"})
+        self.assertEqual(records[0]["prompt"], "What is 7 + 5?")
+        self.assertEqual(records[0]["answer"], "12")
+        self.assertRegex(records[0]["sampleId"], r"^sample_[0-9a-f]{24}$")
         training, evaluation = rlvr.split_dataset(records, 4)
         self.assertEqual(len(training), 12)
         self.assertEqual(len(evaluation), 4)
@@ -159,6 +168,27 @@ class RlvrUnitTest(unittest.TestCase):
         self.assertEqual(rlvr.finite_metric(math.inf), "+inf")
         self.assertEqual(rlvr.finite_metric(-math.inf), "-inf")
         self.assertIsNone(rlvr.finite_metric(None))
+
+    def test_json_artifacts_publish_through_an_atomic_rename(self) -> None:
+        with tempfile.TemporaryDirectory() as run_dir:
+            destination = Path(run_dir) / "summary.json"
+            real_replace = rlvr.os.replace
+            observed_temporary: list[Path] = []
+
+            def replace(temporary: str, target: str | Path) -> None:
+                temporary_path = Path(temporary)
+                self.assertTrue(temporary_path.is_file())
+                self.assertEqual(Path(target), destination)
+                self.assertFalse(destination.exists())
+                observed_temporary.append(temporary_path)
+                real_replace(temporary, target)
+
+            with mock.patch.object(rlvr.os, "replace", side_effect=replace):
+                rlvr.write_json(run_dir, "summary.json", {"value": 7})
+
+            self.assertEqual(json.loads(destination.read_text()), {"value": 7})
+            self.assertEqual(len(observed_temporary), 1)
+            self.assertEqual(list(Path(run_dir).glob("*.tmp")), [])
 
     def test_heartbeat_emits_liveness_metrics_until_stopped(self) -> None:
         stop = mock.Mock()
@@ -174,13 +204,19 @@ class RlvrUnitTest(unittest.TestCase):
                 gpu_count=lambda: 2,
             )
 
-        emit.assert_called_once_with(
-            {
-                "type": "metrics",
-                "step": 7,
-                "wallClockMs": 10_000,
-                "values": {"system/heartbeat": 1.0, "system/gpu_count": 2.0},
-            }
+        self.assertEqual(
+            emit.call_args_list,
+            [
+                mock.call({"type": "heartbeat", "step": 7, "wallClockMs": 10_000}),
+                mock.call(
+                    {
+                        "type": "resource",
+                        "step": 7,
+                        "wallClockMs": 10_000,
+                        "values": {"system/gpu_count": 2.0},
+                    }
+                ),
+            ],
         )
         self.assertEqual(stop.wait.call_args_list, [mock.call(15), mock.call(15)])
 
@@ -214,21 +250,45 @@ class RlvrUnitTest(unittest.TestCase):
 
     def test_replay_samples_follow_execution_order(self) -> None:
         samples = [
-            {"phase": "training", "value": 2},
-            {"phase": "evaluation-after", "value": 3},
-            {"phase": "evaluation-before", "value": 1},
+            {"phase": "training", "sampleId": "sample_b", "value": 3},
+            {"phase": "evaluation-after", "sampleId": "sample_a", "value": 4},
+            {"phase": "evaluation-before", "sampleId": "sample_a", "value": 1},
+            {"phase": "training", "sampleId": "sample_a", "value": 2},
         ]
         ordered = rlvr.order_replay_samples(samples)
-        self.assertEqual([sample["value"] for sample in ordered], [1, 2, 3])
+        self.assertEqual([sample["value"] for sample in ordered], [1, 2, 3, 4])
+
+    def test_explicit_sample_ids_pair_generations_stably(self) -> None:
+        ledger = rlvr.EvidenceLedger(6)
+        reward = rlvr.make_exact_integer_reward(ledger)
+        reward(
+            completions=["12"],
+            answer=["12"],
+            sampleId=["sample_fixed"],
+        )
+        reward(
+            completions=["11"],
+            answer=["12"],
+            sampleId=["sample_fixed"],
+        )
+        self.assertEqual(
+            [
+                (sample["sampleId"], sample["generationIndex"])
+                for sample in ledger.samples
+            ],
+            [("sample_fixed", 0), ("sample_fixed", 1)],
+        )
 
     def test_reward_accepts_an_explicit_phase_from_the_backend(self) -> None:
         ledger = rlvr.EvidenceLedger(9)
         step = {"value": 0}
         reward = rlvr.make_exact_integer_reward(
             ledger,
-            phase_resolver=lambda requested: "training"
-            if requested != "evaluation"
-            else ("evaluation-before" if step["value"] == 0 else "evaluation-after"),
+            phase_resolver=lambda requested: (
+                "training"
+                if requested != "evaluation"
+                else ("evaluation-before" if step["value"] == 0 else "evaluation-after")
+            ),
         )
 
         reward(completions=["12"], answer=["12"], evidencePhase=["evaluation"])
@@ -240,7 +300,6 @@ class RlvrUnitTest(unittest.TestCase):
         self.assertEqual(ledger.summarize("training")["verifierPassRate"], 1.0)
         self.assertEqual(ledger.summarize("evaluation-after")["verifierPassRate"], 0.0)
 
-
     def test_v2_dataset_leaves_a_holdout_large_enough_to_measure(self) -> None:
         records, sha = rlvr.load_builtin_dataset("arithmetic-rlvr-v2")
         self.assertEqual(len(records), 320)
@@ -249,9 +308,35 @@ class RlvrUnitTest(unittest.TestCase):
 
         training, holdout = rlvr.split_dataset(records, 64)
         self.assertEqual((len(training), len(holdout)), (256, 64))
-        self.assertTrue(set(r["prompt"] for r in training).isdisjoint(
-            r["prompt"] for r in holdout
-        ))
+        self.assertTrue(
+            {record["prompt"] for record in training}.isdisjoint(
+                record["prompt"] for record in holdout
+            )
+        )
+
+    def test_project_dataset_and_verifier_load_only_from_snapshot_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "dataset.jsonl"
+            verifier = root / "verifier.py"
+            dataset.write_text(
+                '{"sampleId":"stable-1","prompt":"2+2","answer":"4"}\n'
+                '{"sampleId":"stable-2","prompt":"3+3","answer":"6"}\n'
+            )
+            verifier.write_text(
+                "def verify(completion, expected):\n"
+                "    return completion.strip() == f'answer={expected}'\n"
+            )
+
+            records, digest = rlvr.load_project_dataset(str(dataset))
+            verify = rlvr.load_project_verifier(str(verifier))
+            reward = rlvr.make_exact_integer_reward(
+                rlvr.EvidenceLedger(9), verifier=verify
+            )
+
+            self.assertEqual([row["sampleId"] for row in records], ["stable-1", "stable-2"])
+            self.assertEqual(len(digest), 64)
+            self.assertEqual(reward(completions=["answer=4"], answer=["4"]), [1.0])
 
 
 if __name__ == "__main__":

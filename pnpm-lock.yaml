@@ -919,6 +919,9 @@ importers:
       '@electron/asar':
         specifier: ^3.4.1
         version: 3.4.1
+      '@t3tools/client-runtime':
+        specifier: workspace:*
+        version: link:../packages/client-runtime
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../packages/contracts

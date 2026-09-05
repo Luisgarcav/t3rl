@@ -65,6 +65,24 @@ const scopedRun = Effect.fn("RlToolkit.scopedRun")(function* (runId: string) {
   return { context, detail };
 });
 
+const scopedStudy = Effect.fn("RlToolkit.scopedStudy")(function* (studyId: string) {
+  const context = yield* projectContext();
+  const manager = yield* RlManager.RlManager;
+  const study = yield* manager.getStudy({ studyId }).pipe(
+    Effect.mapError(
+      () =>
+        new RlAgentToolError({
+          code: "run-not-found",
+          detail: `RL study not found in the current project: ${studyId}`,
+        }),
+    ),
+  );
+  if (study.projectId !== context.projectId) {
+    return yield* fail("run-not-found", `RL study not found in the current project: ${studyId}`);
+  }
+  return { context, study };
+});
+
 const inspectRun = Effect.fn("RlToolkit.inspectRun")(function* (runId: string) {
   const { context, detail } = yield* scopedRun(runId);
   return {
@@ -72,6 +90,7 @@ const inspectRun = Effect.fn("RlToolkit.inspectRun")(function* (runId: string) {
     summary: detail.summary,
     manifest: detail.manifest,
     artifacts: detail.artifacts,
+    lineage: detail.lineage,
     metricBatchCount: detail.metrics.length,
     availableMetricKeys: [
       ...new Set(detail.metrics.flatMap((batch) => Object.keys(batch.values))),
@@ -220,6 +239,27 @@ const handlers = {
       return { ...context, runs: result.runs };
     }),
   rl_get_run: ({ runId }) => inspectRun(runId),
+  rl_list_artifacts: ({ runId, cursor, limit }) =>
+    Effect.gen(function* () {
+      const { context } = yield* scopedRun(runId);
+      const manager = yield* RlManager.RlManager;
+      const page = yield* manager
+        .listArtifacts({
+          runId,
+          limit: limit ?? 50,
+          ...(cursor === undefined ? {} : { cursor }),
+        })
+        .pipe(
+          Effect.mapError(
+            () =>
+              new RlAgentToolError({
+                code: "run-not-found",
+                detail: `RL run not found in the current project: ${runId}`,
+              }),
+          ),
+        );
+      return { ...context, runId, page };
+    }),
   rl_query_metrics: ({ runId, metricKeys, stepFrom, stepTo, limit }) =>
     Effect.gen(function* () {
       if (stepFrom !== undefined && stepTo !== undefined && stepFrom > stepTo) {
@@ -275,6 +315,43 @@ const handlers = {
         );
       return { ...context, runId: result.runId };
     }),
+  rl_resume_run: ({ parentRunId, sourceArtifactId, requestId }) =>
+    Effect.gen(function* () {
+      const { context } = yield* scopedRun(parentRunId);
+      const manager = yield* RlManager.RlManager;
+      const result = yield* manager
+        .resume({
+          projectId: context.projectId,
+          parentRunId,
+          sourceArtifactId,
+          requestId,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) => new RlAgentToolError({ code: "operation-failed", detail: error.message }),
+          ),
+        );
+      return { ...context, parentRunId, runId: result.runId, relation: "resume" as const };
+    }),
+  rl_warm_start_run: ({ parentRunId, sourceArtifactId, requestId, targetExperimentId }) =>
+    Effect.gen(function* () {
+      const { context } = yield* scopedRun(parentRunId);
+      const manager = yield* RlManager.RlManager;
+      const result = yield* manager
+        .warmStart({
+          projectId: context.projectId,
+          parentRunId,
+          sourceArtifactId,
+          requestId,
+          ...(targetExperimentId === undefined ? {} : { targetExperimentId }),
+        })
+        .pipe(
+          Effect.mapError(
+            (error) => new RlAgentToolError({ code: "operation-failed", detail: error.message }),
+          ),
+        );
+      return { ...context, parentRunId, runId: result.runId, relation: "warm-start" as const };
+    }),
   rl_cancel_run: ({ runId }) =>
     Effect.gen(function* () {
       const { context } = yield* scopedRun(runId);
@@ -289,6 +366,51 @@ const handlers = {
         ),
       );
       return { ...context, runId, state: result.state };
+    }),
+  rl_create_study: ({ definition }) =>
+    Effect.gen(function* () {
+      const context = yield* projectContext();
+      const manager = yield* RlManager.RlManager;
+      const study = yield* manager
+        .createStudy({ projectId: context.projectId, definition })
+        .pipe(
+          Effect.mapError(
+            (error) => new RlAgentToolError({ code: "operation-failed", detail: error.message }),
+          ),
+        );
+      return { ...context, study };
+    }),
+  rl_get_study: ({ studyId }) =>
+    Effect.gen(function* () {
+      const { context, study } = yield* scopedStudy(studyId);
+      return { ...context, study };
+    }),
+  rl_compare_study: ({ studyId, baselineLabel, candidateLabel, metricKey, estimator }) =>
+    Effect.gen(function* () {
+      const { context } = yield* scopedStudy(studyId);
+      const manager = yield* RlManager.RlManager;
+      const comparison = yield* manager
+        .compareStudy({ studyId, baselineLabel, candidateLabel, metricKey, estimator })
+        .pipe(
+          Effect.mapError(
+            () =>
+              new RlAgentToolError({
+                code: "run-not-found",
+                detail: `RL study not found in the current project: ${studyId}`,
+              }),
+          ),
+        );
+      return { ...context, comparison };
+    }),
+  rl_validate_experiment: ({ experimentId }) =>
+    Effect.gen(function* () {
+      const context = yield* projectContext();
+      const manager = yield* RlManager.RlManager;
+      const report = yield* manager.validateExperiment({
+        projectId: context.projectId,
+        experimentId,
+      });
+      return { ...context, report };
     }),
 } satisfies Parameters<typeof RlToolkit.toLayer>[0];
 

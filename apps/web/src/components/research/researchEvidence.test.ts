@@ -17,6 +17,7 @@ const projection: RlRunProjection = {
     errorMessage: null,
   },
   manifest: null,
+  lineage: { edges: [], truncated: false },
   artifacts: [],
   metrics: [
     { step: 10, wallClockMs: 10, values: { "eval/mean_return": 20, entropy: "nan" } },
