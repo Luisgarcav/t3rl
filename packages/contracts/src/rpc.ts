@@ -219,6 +219,14 @@ import {
   RL_MAX_ARTIFACT_PAGE_SIZE,
   RL_MAX_SNAPSHOT_METRIC_BATCHES,
 } from "./rl.ts";
+import {
+  RlEvidenceError,
+  RlEvidenceExport,
+  RlExportEvidenceInput,
+  RlGetResearchRecordInput,
+  RlResearchRecord,
+  RlResearchRecordInput,
+} from "./rlEvidence.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -343,6 +351,9 @@ export const WS_METHODS = {
   rlGetStudy: "rl.getStudy",
   rlCompareStudy: "rl.compareStudy",
   rlValidateExperiment: "rl.validateExperiment",
+  rlExportEvidence: "rl.exportEvidence",
+  rlRecordResearch: "rl.recordResearch",
+  rlGetResearchRecord: "rl.getResearchRecord",
 
   // Streaming subscriptions
   rlSubscribeRun: "rl.subscribeRun",
@@ -1144,6 +1155,22 @@ export const WsRlSubscribeRunRpc = Rpc.make(WS_METHODS.rlSubscribeRun, {
   stream: true,
 });
 
+export const WsRlExportEvidenceRpc = Rpc.make(WS_METHODS.rlExportEvidence, {
+  payload: RlExportEvidenceInput,
+  success: RlEvidenceExport,
+  error: Schema.Union([RlEvidenceError, EnvironmentAuthorizationError]),
+});
+export const WsRlRecordResearchRpc = Rpc.make(WS_METHODS.rlRecordResearch, {
+  payload: RlResearchRecordInput,
+  success: RlResearchRecord,
+  error: Schema.Union([RlEvidenceError, EnvironmentAuthorizationError]),
+});
+export const WsRlGetResearchRecordRpc = Rpc.make(WS_METHODS.rlGetResearchRecord, {
+  payload: RlGetResearchRecordInput,
+  success: RlResearchRecord,
+  error: Schema.Union([RlEvidenceError, EnvironmentAuthorizationError]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1256,5 +1283,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsRlGetStudyRpc,
   WsRlCompareStudyRpc,
   WsRlValidateExperimentRpc,
+  WsRlExportEvidenceRpc,
+  WsRlRecordResearchRpc,
+  WsRlGetResearchRecordRpc,
   WsRlSubscribeRunRpc,
 );

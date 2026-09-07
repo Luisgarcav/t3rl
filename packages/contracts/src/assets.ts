@@ -19,6 +19,10 @@ export const AssetResource = Schema.Union([
     runId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
     artifactId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
   }),
+  Schema.TaggedStruct("rl-evidence", {
+    projectId: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+    exportId: Schema.String.check(Schema.isPattern(/^export_[a-f0-9]{48}$/)),
+  }),
   Schema.TaggedStruct("project-favicon", {
     cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     // A cache-key hint only. The server reads the authoritative path from the

@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "status": "passed",
+  "scope": "Imports six already captured actual CUDA TRL SFT workers into real RunStore and RlManager; no production worker-launch or browser claim",
+  "source": ".t3/serious-validation/trl-gpu",
+  "archive": ".t3/serious-validation/reference-evidence/sft-three-seed-evidence.tar",
+  "importedStateRemovedBeforeVerification": true,
+  "evaluatorSourceHashesVerifiedAgainstCapturedProtocols": true,
+  "capturedSourceHashes": {
+    "offline.py": "c14652a05f8f09831766f9ee1b3d1dd7cef6a2cd0fbb82cdaa08c5a778328b9f",
+    "trl_offline_worker.py": "9df9661339c6bd4ad5dc25a131340b117a845c2da402efb183909e93c8bf2e47",
+    "checkpointing.py": "5058472deb6fe07363d55ac251815c1e571f0f3c3e14e4264739b4b2d9915b78",
+    "trl_worker.py": "32d3d4e644c713e9790f20f63c7db2206aa8b7798b28294758617be0db9b51e7",
+    "rlvr.py": "85704dab40063e2dc2b419ab3a3f9f3f9ae277185257265dae6da1e949e92e05",
+    "offline_validation.py": "e58912c6d3e5220b3bc0c83a26f738d83232609b44828d9ecd5aee88ed32321b"
+  },
+  "capturedEnvironmentLockSha256": "bc0814a37063388dff1ebc84b5385bdd0841f79de20a55d9459d90472fa6720b",
+  "comparison": {
+    "studyId": "study_real_sft_reference",
+    "protocolSha256": "e27e44a935f4a8080fd884e3d1244136c84c4e48738b5c7ae1a67785ac5c6435",
+    "baselineLabel": "zero_lr",
+    "candidateLabel": "trained",
+    "metricKey": "eval_after/loss",
+    "estimator": {
+      "version": 2,
+      "statistic": "paired-mean-delta",
+      "statisticalUnit": "paired-sample-within-run-seed",
+      "confidenceLevel": 0.95,
+      "resamplingSeed": 17,
+      "resampleCount": 10000,
+      "missingPairPolicy": "fail"
+    },
+    "seedSet": [7, 19, 41],
+    "n": 3,
+    "unmatchedRuns": 0,
+    "failedRuns": 0,
+    "unmatchedSamples": 0,
+    "excludedRuns": [],
+    "baselineMean": 3.7519192695617676,
+    "candidateMean": 3.7258988221486407,
+    "pairedDelta": -0.02602044741312663,
+    "dispersion": 0.008439849917626299,
+    "interval": [-0.03499786059061687, -0.018491268157958984],
+    "conclusion": "interval"
+  },
+  "exported": {
+    "version": 1,
+    "exportId": "export_d128e2cd5521a7937df9878e8c118c2886ef26c1e7acf3f3",
+    "projectId": "reference-sft-ablation",
+    "sha256": "8cefb92491bb99dc21e36f58596832cec80e2865083968c616633c0767bc9562",
+    "indexSha256": "d128e2cd5521a7937df9878e8c118c2886ef26c1e7acf3f3ad4b68d61ebf8a12",
+    "bytes": 6699520,
+    "fileCount": 238,
+    "omittedCount": 24
+  },
+  "indexedSamples": 12,
+  "recordIds": ["retrospective-sft-reference", "retrospective-sft-result"],
+  "independentVerification": {
+    "files": 238,
+    "guarantees": {
+      "environment": "recorded-evidence-only; inspect omissions and platform requirements",
+      "integrity": "all-included-files-verified",
+      "numericalReproducibility": "not-established-by-export",
+      "scientificConclusion": "requires independent held-out evaluation and adequate replication",
+      "trainerResume": "requires an explicitly included complete compatible checkpoint"
+    },
+    "indexSha256": "d128e2cd5521a7937df9878e8c118c2886ef26c1e7acf3f3ad4b68d61ebf8a12",
+    "omissions": 24,
+    "verified": true
+  },
+  "independentReload": {
+    "reloads": [
+      {
+        "runId": "reference_trained_19",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "reference_trained_41",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "reference_trained_7",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "reference_zero_lr_19",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "reference_zero_lr_41",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "reference_zero_lr_7",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      }
+    ],
+    "baseModelRemappedToBundle": true,
+    "hubOffline": true,
+    "localFilesOnly": true
+  },
+  "limitations": [
+    "Retrospective tiny synthetic reference; three training seeds and two held-out samples",
+    "Reload uses existing locked Python dependencies on CPU, not an independently rebuilt environment",
+    "uv.lock hash matches worker capture; pyproject.toml was captured at import time",
+    "Model/tokenizer paths explicitly remapped to extracted bundle; original imported SQLite/state removed",
+    "Full trainer checkpoints included; trainer resume is validated by the source lifecycle harness, not rerun by this script"
+  ]
+}

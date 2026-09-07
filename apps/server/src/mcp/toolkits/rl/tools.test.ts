@@ -20,12 +20,15 @@ it("exports every RL Lab utility with closed-world annotations", () => {
     "rl_compare_runs",
     "rl_compare_study",
     "rl_create_study",
+    "rl_export_evidence",
+    "rl_get_research_record",
     "rl_get_run",
     "rl_get_study",
     "rl_list_artifacts",
     "rl_list_runs",
     "rl_query_metrics",
     "rl_read_artifact",
+    "rl_record_research",
     "rl_resume_run",
     "rl_start_run",
     "rl_validate_experiment",
@@ -73,6 +76,13 @@ it("exports every RL Lab utility with closed-world annotations", () => {
   ] as const) {
     const tool = RlToolkit.tools[name];
     expect(Context.get(tool.annotations, Tool.Readonly)).toBe(true);
+    expect(Context.get(tool.annotations, Tool.Destructive)).toBe(false);
+    expect(Context.get(tool.annotations, Tool.Idempotent)).toBe(true);
+    expect(Context.get(tool.annotations, Tool.OpenWorld)).toBe(false);
+  }
+  for (const name of ["rl_export_evidence", "rl_record_research"] as const) {
+    const tool = RlToolkit.tools[name];
+    expect(Context.get(tool.annotations, Tool.Readonly)).toBe(false);
     expect(Context.get(tool.annotations, Tool.Destructive)).toBe(false);
     expect(Context.get(tool.annotations, Tool.Idempotent)).toBe(true);
     expect(Context.get(tool.annotations, Tool.OpenWorld)).toBe(false);

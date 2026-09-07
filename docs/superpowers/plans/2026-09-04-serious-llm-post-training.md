@@ -3,9 +3,10 @@
 > For maintainers. This plan turns the remaining post-training work into ordered, reviewable
 > increments. It is a dependency plan, not a calendar commitment.
 
-**Status:** In progress — the Gate 0 through Milestone 2 implementation slice is ready for first
-review; the explicitly approved integrated web pass, clean-machine environment reproduction, and
-CUDA-backed TRL/Axolotl smoke runs remain release verification.
+**Status:** In progress — implementation now extends through Milestone 5. Release A is the active
+delivery gate: a useful local investigation with real trainer validation, trustworthy comparison,
+a durable research record, and independently verifiable evidence. Component tests and benchmarks
+do not by themselves close that gate; see the delivery-status table below.
 
 **Goal:** Make T3RL a reproducible control plane for local and distributed LLM post-training with
 TRL and Axolotl, while keeping the T3 server authoritative, Python workers replaceable, clients
@@ -33,15 +34,81 @@ The repository already has:
 
 - an authoritative Node run lifecycle with SQLite projections and reconnectable subscriptions;
 - a versioned NDJSON Python worker boundary;
-- bundled Stable-Baselines3, native TRL GRPO/RLVR, and Axolotl GRPO adapters;
+- bundled Stable-Baselines3, native TRL GRPO/RLVR and SFT/DPO paths, and Axolotl translations;
 - bounded metrics and artifacts, capability probing, cancellation, and project-scoped agent tools;
-- a web/desktop RL Lab with charts, manifest, evaluation, replay, and artifact access; and
+- independent committed `uv` projects, server-computed artifact hashes, and paginated inventories;
+- separate LoRA exports and trainer checkpoints, child-run continuation, and immutable lineage;
+- persisted studies, explicit seed roles, statistical estimators, and project-owned definitions;
+- immutable project research records and bounded evidence exports with a standalone verifier;
+- a web/desktop RL Lab with charts, comparison, manifest, evaluation, replay, and artifact access; and
 - a shared client runtime that can support a future mobile surface.
 
-The current boundary is still single-process and single-seed. Active runs become `interrupted` on
-server restart, environments have upper dependency pins but no lockfiles, experiment definitions are
-bundled rather than project-owned, and checkpoint identity, lineage, study aggregation, retention,
-mobile UI, and formal performance gates are not yet implemented.
+Each worker is still single-process and a run owns one training seed; studies group independent
+runs. Active runs become `interrupted` on server restart. Distributed launchers, process adoption,
+whole-run trash/restore, advanced retention, and the mobile RL surface remain later work.
+
+### Delivery status (2026-09-05)
+
+Use three separate claims in implementation reviews:
+
+- **Implemented:** the behavior exists in code with focused contract/component proof.
+- **Framework-verified:** the named pinned framework actually trained, evaluated, saved, loaded, and
+  resumed on the recorded device. Imports, a CUDA-availability assertion, and fake trainers do not
+  establish this claim.
+- **Exit gate passed:** every applicable milestone acceptance criterion has a linked result,
+  including integrated client, reproduction, and performance checks where required.
+
+| Slice                       | Implementation evidence                                                                                | Real-framework / independent verification                                                                                               | Exit gate   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Gate 0                      | Correctness fixes and [fake-stream baseline](../../benchmarks/rl-gate-0/README.md)                     | Native TRL GRPO lifecycle passes; integrated client, renderer measurements and complete adapter parity remain                           | Open        |
+| Milestone 1                 | Committed locks, authoritative hashes, publication and pagination                                      | Fresh frozen TRL/Axolotl environments exercised on one host; independent clean-machine reconstruction remains                           | Open        |
+| Milestone 2                 | Checkpoint/adapter distinction, lineage, retention and deterministic resume fixture                    | Named TRL/Axolotl framework cases pass; real manager SFT resume preserves seeds/protocol and matches uninterrupted final weights        | Open        |
+| Milestone 3                 | Study scheduling, seed contracts, verified sample indexing, explicit exclusions and bounded estimators | Public comparison passes on six real manager-launched CUDA runs; this GPU case groups completed runs and does not test study scheduling | Open        |
+| Milestone 4                 | Project registry, validation and immutable input snapshots                                             | Six project-defined CUDA SFT runs pass through real registry, capabilities, source capture, worker spawning and SQLite services         | Open        |
+| Milestone 5                 | Native SFT/DPO and Axolotl configuration paths                                                         | Fourteen real offline method/device/seed cases pass, including final distinct training/data seed checks; broader release gates remain   | Open        |
+| Release A evidence delivery | Immutable project-scoped records, bounded TAR export, offline verifier and signed download             | Imported and manager-launched CUDA exports verify/reload after source state removal; independent training reproduction remains          | Open        |
+| Milestones 6–12             | Planned extensions; existing checkpoint retention is only a subset of Milestone 11                     | Require the entry and exit evidence below                                                                                               | Not started |
+
+The dated implementation checkpoints below describe code coverage, not a declaration that the
+whole milestone passed. Attach the exact command, source revision, lock digest, hardware, raw result,
+and limitations when changing a verification cell. A skipped hardware test stays unverified. The
+checked-in component profiles model transport and reducer work; they do not measure CUDA training,
+real socket framing, browser paint, or a second machine.
+
+The [real-framework report and reproduction commands](../../benchmarks/rl-framework-validation/README.md)
+record fourteen SFT/DPO method/device/seed lifecycle cases and native Qwen GRPO on one Linux host.
+All recorded interrupted/resumed adapter parameter differences were zero within predeclared
+tolerances. The three-seed TRL CUDA matrix and zero-learning-rate ablations retain their original
+source snapshot; the final seed-transport code was checked separately with distinct training/data
+seeds on TRL CPU/CUDA and Axolotl CUDA. Tiny-model lifecycle evidence does not establish model
+quality, cross-host reproducibility, or a completed client gate. GRPO's lower held-out score is
+preserved as a negative observation.
+
+The subsequent [production-service reference](../../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+also passes six project-defined CUDA SFT launches, one manager checkpoint resume, public comparison,
+and offline export/reload through the actual server services. Its study membership is recorded after
+the runs finish, so it does not establish real-GPU `createStudy` scheduling. The command and complete
+scope are recorded in [Release A evidence delivery](#release-a-trustworthy-local-post-training).
+
+## Reproducibility guarantees
+
+Every research record, comparison, and export must say which guarantee its evidence establishes.
+Do not collapse these into a single “reproducible” badge:
+
+| Guarantee                  | Required evidence and acceptance                                                                                                                                          | What remains outside the claim                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Artifact integrity         | A canonical inventory, byte counts and server-computed hashes; an offline verifier detects changed or missing files                                                       | The bytes may still contain an incorrect model or conclusion                                                     |
+| Environment reconstruction | Retained `pyproject.toml`/`uv.lock` bytes, interpreter and package versions, model/tokenizer revisions, OS and accelerator/driver evidence; a fresh environment is tested | A lockfile alone does not reproduce host drivers or numerical behavior                                           |
+| Trainer-state resume       | Verified model, optimizer, scheduler, RNG, trainer, data-cursor and applicable scaler state; a child run restores the selected framework state                            | An adapter warm start does not restore trainer state; portability across frameworks or topologies is not implied |
+| Numerical reproducibility  | A repeated or interrupted/resumed reference run matches declared tensors and metrics within tolerances fixed before execution on a recorded platform                      | Bitwise or cross-platform equality is not promised                                                               |
+| Empirical repeatability    | Independent training seeds and a fixed held-out evaluation protocol reproduce a reported effect estimate with uncertainty and disclosed exclusions                        | Integrity, a matching seed, or lower training loss does not establish generalization                             |
+
+Store the evidence, verification command/result, scope, and unmet requirements for each guarantee.
+Unknown, unsupported, failed, and verified evidence remain distinguishable in visible summaries and
+exported records. “Exact resume” in the existing operation names means restoration of trainer state;
+numerical equivalence needs its own measured proof. PyTorch documents that results need not match
+across releases, platforms, or CPU/GPU execution even with the same seed:
+[PyTorch reproducibility](https://docs.pytorch.org/docs/main/notes/randomness.html).
 
 ## Program rules
 
@@ -68,6 +135,13 @@ These apply to every increment:
    distinguishable throughout worker, storage, RPC, aggregation, and visualization layers.
 10. **Performance is an exit gate.** Each increment records its effect on CPU, RSS, SQLite writes,
     WebSocket bytes, artifact growth, and renderer work before it can graduate.
+11. **A useful conclusion need not be an improvement.** Negative, null, failed, and inconclusive
+    experiments retain their hypothesis, evidence, and limitations. Do not change the holdout or
+    success threshold after observing results to make a demonstration look successful.
+12. **Expansion follows an experiment.** A new algorithm, launcher, strategy, rollout service, or
+    autonomous curriculum requires a named research question and a measured limit of the current
+    local workflow. All twelve requested capabilities remain in scope; their implementation order
+    follows evidence and demand.
 
 ## Target architecture
 
@@ -107,12 +181,15 @@ flowchart TD
     M3["3. studies + statistical comparison"]
     M4["4. project experiment registry"]
     M5["5. SFT + DPO"]
+    E["Release A evidence<br/>research record + minimal export"]
+    A["Release A gate<br/>real local reference investigation"]
+    N["Named research need<br/>measured local limit"]
     M6["6. RLOO + PPO"]
     M7["7. Accelerate + torchrun launchers"]
     M8["8. FSDP + DeepSpeed"]
     M9["9. supervised vLLM"]
     M10["10. restart adoption"]
-    M11["11. retention + export + trash"]
+    M11["11. advanced retention + streamed export + trash"]
     M12["12. mobile monitoring"]
     H["Release hardening"]
 
@@ -121,13 +198,21 @@ flowchart TD
     M2 --> M3
     M1 --> M4
     M4 --> M5
-    M5 --> M6
+    M2 --> E
+    M3 --> E
+    M4 --> E
+    M5 --> A
+    E --> A
+    A --> N
+    N --> M6
+    N --> M7
     M2 --> M7
     M4 --> M7
     M7 --> M8
     M8 --> M9
     M2 --> M10
     M7 --> M10
+    E --> M11
     M2 --> M11
     M3 --> M11
     M3 --> M12
@@ -144,37 +229,38 @@ until the end.
 
 ## Requested-scope coverage
 
-| Requested capability                                       | Planned delivery           |
-| ---------------------------------------------------------- | -------------------------- |
-| Checkpoints/LoRA plus hashes                               | Milestones 1–2             |
-| Explicit resume and lineage                                | Milestone 2                |
-| Multi-seed uncertainty and paired comparison               | Milestone 3                |
-| Project models, datasets, and verifiers                    | Milestone 4                |
-| SFT, DPO, PPO, and RLOO beyond GRPO                        | Milestones 5–6             |
-| Reproducible `uv` lockfiles                                | Milestone 1                |
-| Accelerate/`torchrun`, then FSDP/DeepSpeed                 | Milestones 7–8             |
-| Supervised vLLM sidecar                                    | Milestone 9                |
-| Process adoption after restart                             | Milestone 10               |
-| Retention, export, and recoverable deletion                | Milestone 11               |
-| Real mobile RL surface                                     | Milestone 12               |
-| CPU, memory, WebSocket, artifact, and renderer measurement | Gate 0 and every milestone |
+| Requested capability                                       | Planned delivery                                              |
+| ---------------------------------------------------------- | ------------------------------------------------------------- |
+| Checkpoints/LoRA plus hashes                               | Milestones 1–2                                                |
+| Explicit resume and lineage                                | Milestone 2                                                   |
+| Multi-seed uncertainty and paired comparison               | Milestone 3                                                   |
+| Project models, datasets, and verifiers                    | Milestone 4                                                   |
+| SFT, DPO, PPO, and RLOO beyond GRPO                        | Milestones 5–6                                                |
+| Reproducible `uv` lockfiles                                | Milestone 1                                                   |
+| Accelerate/`torchrun`, then FSDP/DeepSpeed                 | Milestones 7–8                                                |
+| Supervised vLLM sidecar                                    | Milestone 9                                                   |
+| Process adoption after restart                             | Milestone 10                                                  |
+| Retention, export, and recoverable deletion                | Minimal export in Release A; advanced storage in Milestone 11 |
+| Real mobile RL surface                                     | Milestone 12                                                  |
+| CPU, memory, WebSocket, artifact, and renderer measurement | Gate 0 and every milestone                                    |
 
 ## Contract and storage direction
 
 Freeze these concepts before adding more trainers:
 
-| Concept              | Required identity and meaning                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------ |
-| Run                  | One execution attempt with immutable terminal history                                      |
-| Study                | A declared set of comparable runs, seeds, and one evaluation protocol                      |
-| Lineage edge         | Child run, parent run, exact checkpoint artifact, relation, and resume step                |
-| Artifact             | Stable ID, role, media type, bytes, per-file hashes, root SHA-256, and ready/trash state   |
-| Checkpoint           | Framework-specific resumable state; never assumed portable                                 |
-| Adapter export       | Portable PEFT/LoRA weights plus base-model identity and adapter configuration              |
-| Evaluation protocol  | Dataset/split fingerprint, sample IDs, generation seeds, decoding, verifier, and statistic |
-| Execution topology   | Launcher, strategy, world size, ranks, GPU allocation, and sidecars                        |
-| Environment evidence | Python version, runner versions, platform, and exact `uv.lock` digest                      |
-| Lease                | Run host identity, authenticated control endpoint, journal cursor, heartbeat, and expiry   |
+| Concept              | Required identity and meaning                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| Run                  | One execution attempt with immutable terminal history                                                  |
+| Study                | A declared set of comparable runs, seeds, and one evaluation protocol                                  |
+| Lineage edge         | Child run, parent run, exact checkpoint artifact, relation, and resume step                            |
+| Artifact             | Stable ID, role, media type, bytes, per-file hashes, root SHA-256, and ready/trash state               |
+| Checkpoint           | Framework-specific resumable state; never assumed portable                                             |
+| Adapter export       | Portable PEFT/LoRA weights plus base-model identity and adapter configuration                          |
+| Evaluation protocol  | Dataset/split fingerprint, sample IDs, generation seeds, decoding, verifier, and statistic             |
+| Research record      | Versioned hypothesis, cited evidence, proposal/authorization, change, run IDs, outcome and limitations |
+| Execution topology   | Launcher, strategy, world size, ranks, GPU allocation, and sidecars                                    |
+| Environment evidence | Python version, runner versions, platform, and exact `uv.lock` digest                                  |
+| Lease                | Run host identity, authenticated control endpoint, journal cursor, heartbeat, and expiry               |
 
 ### Additive schema changes
 
@@ -202,7 +288,9 @@ command:
 - `rl.createStudy`, `rl.getStudy`, and `rl.compareStudy` own multi-seed execution and results;
 - `rl.queryMetrics` provides bounded ranges and resolutions instead of shipping full histories;
 - `rl.listArtifacts` paginates checkpoint-heavy runs;
-- `rl.exportRun` and `rl.exportStudy` stream evidence bundles outside WebSocket payloads; and
+- `rl.recordResearch` and `rl.getResearchRecord` preserve and inspect immutable evidence-linked records;
+- `rl.exportEvidence` creates bounded run/study bundles delivered outside WebSocket payloads; later
+  archival policy extends that boundary; and
 - `rl.trashRun`, `rl.restoreRun`, and `rl.purgeRun` implement the full reversible lifecycle.
 
 Each operation gets the equivalent `rl_*` agent utility. The clients render server-owned state; they
@@ -210,7 +298,7 @@ do not calculate authoritative hashes, lineage, retention eligibility, or statis
 
 ### Worker protocol v2
 
-Protocol v2 should add explicit `heartbeat`, `resource`, and checkpoint-publication evidence while
+Protocol v2 adds explicit `heartbeat`, `resource`, and checkpoint-publication evidence while
 keeping metrics separate from lifecycle. The server supports v1 and v2 during migration, but every
 new post-training capability requires v2. A v2 artifact is announced only after it is atomically
 renamed into place; the server then validates confinement, size, contents, and hashes before marking
@@ -342,6 +430,13 @@ step-4 resume equivalence, adapter loading, graceful cancellation, lineage, rete
 byte-for-byte parent immutability without requiring a GPU. The checked-in
 [checkpoint and lineage profile](../../benchmarks/rl-milestone-2/README.md)
 records CPU, RSS, SQLite, WebSocket, artifact-growth, and reducer costs for this increment.
+This fixture proves the control-plane contract. The separate
+[real-framework cases](../../benchmarks/rl-framework-validation/README.md) restore actual
+optimizer/scheduler/RNG state, independently load PEFT exports, and compare resumed parameters and
+evaluation against uninterrupted controls on the recorded device. They pass for native TRL SFT/DPO
+on CPU/CUDA, native TRL GRPO on CUDA, and Axolotl SFT/DPO on CUDA. Numerical tolerances and platform
+details are recorded separately from checkpoint integrity; untested methods, topologies, and hosts
+remain outside that claim.
 
 ## Milestone 3: studies, multi-seed evaluation, and paired comparison
 
@@ -373,15 +468,34 @@ Stop treating one run as a conclusion and make comparisons statistically honest.
 - A fixture with known paired deltas produces the same interval in server tests and exported output.
 - The UI always shows N, seed set, aggregation method, interval, and unmatched/failed runs.
 - Incompatible protocols cannot be presented as a paired result.
+- A public `rl.compareStudy` fixture supplies retained per-sample evaluation artifacts through the
+  manager into the estimator. Its result matches independent recomputation from the exported
+  evidence. An estimator-only fixture does not close this criterion.
+- The response and clients show the effective statistical unit and conclusion. A run-only fallback
+  cannot be labeled hierarchical sample-level evidence; insufficient, incompatible, and missing
+  evidence cannot appear as a successful comparison with an invented interval.
 - Cancelling one member does not mislabel a partial study as complete.
 
 Implementation checkpoint (2026-09-04): studies now persist immutable A/B definitions, four
 independent seed roles, bounded run schedules, member failure/partial state, and a server-verified
-evaluation-protocol hash. Versioned deterministic hierarchical bootstrap comparison is server-owned
-and reports N, seed set, dispersion, confidence interval, unmatched runs, failures, and explicit
-insufficient-evidence state. Web/desktop Compare and project-scoped `rl_*` utilities consume the
-same RPC result. The checked-in [milestone 3 profile](../../benchmarks/rl-milestone-3/README.md)
-records comparison CPU, RSS, WebSocket, SQLite, artifact, and renderer bounds.
+evaluation-protocol hash. The server-owned versioned estimator supports deterministic hierarchical
+bootstrap and reports N, seed set, dispersion, interval, unmatched runs, failures, and insufficient
+evidence. Web/desktop Compare and project-scoped `rl_*` utilities consume the same RPC result.
+
+Validation update (2026-09-05): public comparison reads server-verified, bounded evaluation sample
+artifacts, rechecks identity after indexing, and uses estimator version 2. It honors the declared
+statistical unit, exposes per-run exclusions and unmatched samples, rejects incompatible/unsupported
+requests, and enforces a resampling budget with cooperative yielding. Historical version 1 stays
+readable and is refused for new calculations because its semantics differed. Run-seed comparison
+never silently becomes sample-level resampling. Focused manager/store/statistical tests exercise
+sample variance, telemetry exclusion, changed artifact bytes, partial/legacy evidence, and protocol
+mismatch; the [public-manager tests](../../../apps/server/src/rl/StudyComparison.test.ts) cover the
+artifact-to-estimator boundary. The verified sample paths are offline TRL and Axolotl;
+legacy GRPO aggregates without that evidence remain an
+explicit missing-evaluation result. Web/desktop now show the actual method, unit, conclusion, and
+exclusions. The [milestone 3 profile](../../benchmarks/rl-milestone-3/README.md) measures estimator
+elapsed time and event-loop responsiveness separately from artifact I/O, storage, transport, or browser
+rendering. The integrated reference-case gate remains open.
 
 ## Milestone 4: project-owned experiments, datasets, models, and verifiers
 
@@ -424,7 +538,9 @@ snapshot, and re-verified before Python starts. TRL and Axolotl load project dat
 modules only inside their worker process. `rl.validateExperiment`, web client runtime support, and
 `rl_validate_experiment` expose the same report. The checked-in
 [milestone 4 profile](../../benchmarks/rl-milestone-4/README.md) records validation and snapshot
-costs.
+costs. The [production-service reference](../../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+additionally exercises project-owned SFT definitions through actual capabilities, source capture,
+worker spawning, run management, and SQLite persistence for six CUDA runs and a checkpoint child.
 
 ## Milestone 5: SFT and DPO
 
@@ -446,9 +562,9 @@ Cover the two foundational offline stages before adding more online RL complexit
   measure; training loss alone is not an evaluation result.
 - Add tiny deterministic CPU fixtures and separately gated single-GPU smoke tests.
 
-TRL currently exposes SFT, DPO, GRPO, RLOO, and other trainers behind one library surface, which
-makes it a practical canonical adapter boundary:
-[TRL trainer taxonomy](https://huggingface.co/docs/trl/main/en/index).
+The committed native environment pins TRL 1.10.0, which exposes SFT, DPO, GRPO, and RLOO behind one
+library surface. Compatibility decisions use that pinned API:
+[TRL 1.10.0 trainer taxonomy](https://huggingface.co/docs/trl/v1.10.0/index).
 
 ### Exit criteria
 
@@ -457,6 +573,9 @@ makes it a practical canonical adapter boundary:
 - DPO rejects malformed or unpaired preference records before model allocation.
 - Native TRL and Axolotl either honor a declared option or report it unsupported; neither silently
   substitutes another behavior.
+- Real-framework SFT and DPO tests perform optimizer steps, publish a resumable checkpoint and PEFT
+  adapter, independently load the adapter, resume a child, and run the declared evaluation. A test
+  that only imports PyTorch or checks `torch.cuda.is_available()` is a capability probe.
 
 Implementation checkpoint (2026-09-05): runner capability reports are method-specific, so CPU SFT
 and DPO availability no longer implies CUDA GRPO availability. The project schema now distinguishes
@@ -467,7 +586,26 @@ cross-experiment warm start from SFT into DPO. Axolotl consumes the same public 
 fixed configuration translator and supervised CLI adapter. Deterministic CPU fixtures reject
 malformed preference records; GPU smoke is separately gated. The checked-in
 [milestone 5 profile](../../benchmarks/rl-milestone-5/README.md) records parsing, hashing, transport,
-storage, and renderer bounds.
+storage, and reducer bounds. The real-framework harness now exercises six optimizer steps,
+checkpoint interruption/resume, independent PEFT loading, and per-sample holdout evaluation. The
+[dated result](../../benchmarks/rl-framework-validation/2026-09-05-linux-x64.json) records fourteen
+offline method/device/seed cases, the original three-seed CUDA ablations, and separate final
+distinct training/data seed checks. The [reproduction instructions](../../benchmarks/rl-framework-validation/README.md)
+identify the pinned environments, exact commands, source snapshots, tolerances, and small-model
+limits. These bounded results do not close the broader Release A investigation or client gates.
+
+## Expansion entry gate
+
+Complete the Release A local reference investigation before starting Milestones 6–9 or an autonomous
+curriculum. Record the concrete question, current baseline, missing capability, supported-version
+matrix, compute budget, and experiment that will justify the new integration. Examples include a
+named model that exceeds measured single-GPU capacity or rollout generation that dominates measured
+step time. A larger catalog by itself is not an entry criterion.
+
+RLOO and PPO remain requested scope. TRL 1.10.0 marks `PPOTrainer` experimental, so PPO additionally
+needs an explicit version/support boundary and a reference experiment that warrants its maintenance
+cost. Do not infer native TRL PPO support from Stable-Baselines3's control-task PPO implementation.
+See the pinned [TRL trainer taxonomy](https://huggingface.co/docs/trl/v1.10.0/index).
 
 ## Milestone 6: RLOO, then PPO
 
@@ -641,11 +779,15 @@ sidecars, exposes an authenticated local Unix socket, and keeps a bounded cursor
 - A runner host that cannot be reached leads to an honest interrupted run, never false completion.
 - Recovery journals remain bounded during a declared maximum disconnection window.
 
-## Milestone 11: retention, export, and recoverable deletion
+## Milestone 11: advanced retention, streamed export, and recoverable deletion
 
 ### Goal
 
 Control storage growth without destroying lineage or making results impossible to audit.
+
+The minimum independently verifiable research bundle and durable research record ship in Release A.
+This milestone extends that format to checkpoint-heavy streams, storage policy, archival, and
+recoverable deletion; it must not delay a researcher's first shareable investigation.
 
 ### Deliverables
 
@@ -653,7 +795,7 @@ Control storage growth without destroying lineage or making results impossible t
   keep-final, study baselines, and trash TTL.
 - Compute actual bytes from verified artifacts; references to shared content count according to a
   documented logical/physical policy.
-- Export a run or study as a streamed research bundle containing a schema-versioned index, manifests,
+- Extend the Release A run/study bundle into streamed exports containing a schema-versioned index, manifests,
   definitions, environment lock digests, lineage, evaluation protocol, aggregates, selected metrics,
   artifact hashes, and verification command. Exclude credentials and secret environment values.
 - Implement `ready -> trashed -> purged` for artifacts/runs with visible restoration before TTL.
@@ -754,9 +896,9 @@ to the implementation review.
 - Every run has enforced wall-time, accelerator-time, generated-token, artifact-byte, log-byte, and
   checkpoint-count limits owned by the server.
 
-The numeric budgets are provisional because the repository has not yet recorded its formal baseline.
-Gate 0 must replace them with measured supported values rather than weakening a gate after a feature
-misses it.
+Component baselines are checked in for Gate 0 and Milestones 2–5. They do not freeze the real-training,
+socket, or renderer budgets above. Those numeric targets remain provisional until the corresponding
+integrated profile records supported values; do not weaken a gate after a feature misses it.
 
 ## Test strategy
 
@@ -795,48 +937,138 @@ misses it.
 
 ### Release A: trustworthy local post-training
 
-Includes Gate 0 and Milestones 1–4. It is complete when locked environments, verified artifacts,
-LoRA/checkpoint distinction, resume lineage, multi-seed studies, and project definitions work for the
-existing GRPO path.
+Includes Gate 0, Milestones 1–5, and the minimum evidence delivery below. It is complete when a
+single-GPU, project-defined investigation traverses real training, independent evaluation,
+checkpoint/resume, multi-seed comparison, an agent-assisted ablation, and second-person reproduction.
+The existing SFT, DPO, and GRPO paths provide the initial method coverage; each advertised framework
+path needs its own real-framework result or an explicit unsupported/unverified status.
 
-### Release B: training breadth
+Minimum evidence delivery:
 
-Includes Milestones 5–6. It is complete when SFT, DPO, GRPO, RLOO, and PPO advertise honest
-capabilities and share the same evidence, checkpoint, evaluation, and lineage contracts.
+- A bounded, durable record connects hypothesis → evidence → proposed change and authorization →
+  source/definition change → baseline/candidate/ablation runs → outcome and limitations. Stable run,
+  study, artifact/hash, protocol, and source identities survive the conversation. Corrections create
+  an attributable revision; they do not rewrite the evidence of a completed run.
+- A run or study exports a schema-versioned inventory with manifests, definitions/input fingerprints,
+  available source evidence, environment lock evidence, lineage, evaluation protocol and retained
+  samples, estimator settings/results, and the research record. Include selected artifact bytes and
+  name every omitted dependency, large checkpoint, or external model needed for reproduction.
+- An offline verification command works without T3RL's database or credentials, detects missing or
+  changed bytes, and reports integrity separately from environment, resume, numerical, and empirical
+  guarantees. Export does not silently claim that an omitted lockfile or checkpoint was verified.
+- An agent uses the same project-scoped evidence boundary to create/read the record and export it.
+  The smallest first delivery can use a local command and additive RPC/MCP operations; streamed
+  archival, retention policy UI, and mobile presentation follow in Milestones 11–12.
+
+Implementation/verification update (2026-09-05): `rl.recordResearch` and `rl.getResearchRecord`
+preserve immutable, idempotent project-scoped records and their parent links. `rl.exportEvidence`
+publishes a bounded TAR with per-file hashes, explicit omissions, selected records and their
+ancestors, and `verify_evidence.py`. Web/desktop download it through the same signed-asset boundary
+as remote clients; `rl_record_research`, `rl_get_research_record`, and `rl_export_evidence` give
+agents the same operations. [Bundle tests](../../../apps/server/src/rl/EvidenceBundle.test.ts)
+remove the original run directory before offline verification and detect altered, missing, and
+unlisted archive members. [Environment evidence tests](../../../apps/server/src/rl/EnvironmentEvidence.test.ts)
+prove that setup files are retained independently of later environment edits and reject stale locks.
+These checks establish the stated storage and integrity behavior; independent training reproduction
+and the integrated client pass remain release gates.
+
+The [imported real-worker reference result](../../benchmarks/rl-post-training-validation/reference-evidence-2026-09-05.json)
+exercises actual SQLite projections, the public run manager, estimator version 2, research records,
+and export using six captured CUDA SFT outputs: three trained/zero-learning-rate seed pairs and
+twelve indexed held-out sample observations. After removing the imported run state and database,
+the archive verifies and all six adapters load on CPU with the bundled base model/tokenizer and
+network access disabled. This closes the imported-evidence integration proof. Its research record
+is retrospective, the toy dataset has eight training and two held-out records, and loading reuses
+existing locked dependencies. Its imported outputs establish artifact and numerical checks without
+demonstrating launch; the subsequent service-level case below covers that boundary separately.
+
+The [production-service reference result](../../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+uses a temporary Git project and real `Experiments`, `Capabilities`, `SourceEvidence`, `WorkerSpawner`,
+`RlManager`, projections, and SQLite services. Six project-defined CUDA SFT runs pair training seeds
+7, 19, and 41 with data seed 19, comparing learning rate 0.005 against a zero-learning-rate ablation.
+Their twelve held-out sample observations produce three seed pairs through public comparison.
+A seventh run uses the real manager resume operation from checkpoint step 2 through step 6,
+preserves the training/data seed set and evaluation protocol, and matches the uninterrupted final
+adapter weights with maximum absolute difference 0 at tolerance `1e-6`. After deleting the temporary
+project and database, the approximately 6.45 MB archive verifies independently and all seven adapters
+reload offline on CPU with the bundled base model and tokenizer.
+
+Run the opt-in [service validation script](../../../apps/server/scripts/rl-production-evidence.ts)
+from the repository root after preparing the pinned `.venv-trl-validation` environment and the local
+model/dataset under `.t3/serious-validation/trl-gpu` with the
+[framework validation commands](../../benchmarks/rl-framework-validation/README.md):
+
+```bash
+T3RL_RUN_PRODUCTION_VALIDATION=1 node apps/server/scripts/rl-production-evidence.ts
+```
+
+This case launches actual GPU work through the server's normal services and records the source,
+locks, lifecycle, sample hashes, comparison, resume proof, and archive verification. It associates
+the six completed runs with a study afterward; it does not exercise `createStudy` scheduling. The
+research record is retrospective, the fixture still has only two held-out records, and the Python
+environment is already installed. Preregistered investigation, generalization, integrated client
+verification, and independent clean-environment/second-person training reproduction remain distinct
+criteria that this result does not establish.
+
+### Release B: evidence-driven training breadth
+
+Includes Milestone 6 after its expansion entry gate. It is complete when the reference need for RLOO
+and PPO is demonstrated and those methods share the SFT/DPO/GRPO evidence, checkpoint, evaluation,
+and lineage contracts with honest pinned-version capabilities.
 
 ### Release C: scale and resilience
 
-Includes Milestones 7–10. It is complete when a two-GPU run can launch, checkpoint, resume, use an
+Includes Milestones 7–10 after a measured capacity or throughput need. It is complete when a two-GPU run can launch, checkpoint, resume, use an
 optional supervised vLLM sidecar, and survive a server restart without framework concepts leaking
 into clients.
 
 ### Release D: operable product
 
 Includes Milestones 11–12 and final hardening. It is complete when storage is controllable and
-recoverable, research bundles verify independently, mobile monitoring works remotely, migrations read
-old runs, and every declared performance budget passes.
+recoverable, the Release A bundle extends to bounded streamed archival, mobile monitoring works
+remotely, migrations read old runs, and every declared performance budget passes.
 
-## Recommended first implementation slice
+## Immediate delivery slice: one local reference investigation
 
-Implementation checkpoint (2026-09-04): this slice now has step-preserving durable metrics,
-deterministic RLVR evidence, TRL/Axolotl parity checks, atomic worker publication, server-authoritative
-file and directory hashes, backward-compatible artifact identity, bounded pagination across RPC,
-web, and `rl_list_artifacts`, independent checked `uv` locks, and a checked-in
-[fake-stream baseline](../../benchmarks/rl-gate-0/README.md). Milestone 2 additionally has distinct
-adapter/checkpoint evidence, exact child-run resume, adapter warm start, immutable lineage, bounded
-checkpoint retention, and graceful cancellation checkpoints.
+Use the implemented local paths to prove a defensible investigation before expanding the backend
+matrix. The reference case records these steps and their evidence:
 
-Start with a narrow two-part slice:
+1. **Declare the question before running.** Select native TRL, one GPU, a pinned small model/tokenizer,
+   and a project-owned dataset. Record a falsifiable hypothesis, baseline, one intervention, an
+   ablation that isolates the intervention, a compute/run budget, and the expected metric. Preserve
+   train, development, and independent final holdout identities; freeze sample IDs, generation
+   policy, estimator, and acceptance/tolerance rules before inspecting the holdout.
+2. **Exercise actual frameworks.** SFT/DPO smoke performs real optimizer steps and before/after
+   evaluation, publishes a checkpoint and adapter, and independently loads them. Exercise the
+   selected GRPO path when the reference hypothesis needs online optimization. Record library,
+   interpreter, driver, device, precision, source and lock evidence, elapsed time, peak GPU memory,
+   artifact bytes, and instrumentation overhead. A CPU run may close a CPU integration check; it
+   cannot be reported as a GPU result.
+3. **Prove continuation.** Interrupt after a published step, create a child from that exact checkpoint,
+   and compare restored trainer state, final adapter tensors, and evaluation with an uninterrupted
+   control under the predeclared numerical tolerance. Verify parent immutability and independent
+   adapter inference. Missing state or unsupported continuation remains an explicit failure.
+4. **Compare independent executions.** Run baseline, candidate, and ablation with the same declared
+   set of at least three independent training seeds and separate recorded data/evaluation/generation
+   seed roles. This is a minimum workflow proof, not a guarantee of statistical power. Retain every
+   scored final-holdout sample needed by the selected estimator; show N, uncertainty, failed/unmatched
+   runs, and the effective statistical unit. Recompute the public result from exported evidence.
+5. **Close the research record.** The agent cites stable evidence, explains the intervention and
+   ablation, and records what the result supports and leaves uncertain. A negative or null effect,
+   failed hypothesis, or insufficient evidence is a valid outcome. Neither a lower training loss nor
+   a positive point estimate is required to make the investigation useful.
+6. **Reproduce independently.** Export the record and evidence. A second researcher verifies the
+   bundle without the originating database, reconstructs the declared environment from the retained
+   inputs, and reruns the documented command. Record what matched within tolerance, what differed,
+   platform changes, and missing external inputs; integrity verification alone does not close this
+   reproduction step.
+7. **Finish surface and performance verification.** The primary agent performs the integrated
+   web/desktop evidence pass only after explicit approval. Measure the actual client and remote
+   reconnect path separately from reducer/serialization profiles; keep unperformed checks open.
 
-1. **Gate 0 correctness:** fix verifier boundaries, step-preserving metrics, Axolotl contract parity,
-   replay order, preflight validation, and zero/one/many-point chart states; record the baseline.
-2. **Milestone 1 environment evidence:** create the three independent `uv` projects and lockfiles,
-   add artifact SHA-256/state fields with backward-compatible readers, and prove atomic publication
-   with fake-worker tests.
-
-Do not begin distributed launchers in the same slice. The first review should answer two binary
-questions: “Can we trust each recorded metric/artifact?” and “Can another machine reconstruct the
-environment that produced it?”
+The review asks whether another researcher can inspect, verify, and repeat a conclusion with its
+limitations. Report implementation fixes and successful commands as they land, but keep Release A
+open until this case and the applicable milestone gates have actual results.
 
 ## Whole-program definition of done
 
@@ -847,5 +1079,7 @@ environment that produced it?”
   adapters.
 - A documented case study performs SFT -> DPO or GRPO/RLOO -> multi-seed evaluation, resumes from a
   checkpoint, scales to two GPUs, exports a verified bundle, and can be monitored remotely.
+- The first local case already includes the durable research record, ablation, independent holdout,
+  and second-person reproduction; scale, extra algorithms, and curricula extend that measured value.
 - Targeted tests, gated GPU tests, migrations, rollback/read compatibility, security review, and
   performance budgets pass before the feature set is described as serious post-training support.

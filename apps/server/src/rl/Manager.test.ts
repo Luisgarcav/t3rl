@@ -172,6 +172,77 @@ const awaitManifest = (manager: RlManager.RlManagerShape, runId: string) =>
   });
 
 describe("RlManager", () => {
+  it.effect("passes the frozen study protocol to the worker and records it in the manifest", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      const evaluationProtocol = {
+        version: 1 as const,
+        protocolSha256: "a".repeat(64),
+        datasetFingerprint: "dataset-v1",
+        split: "test",
+        sampleIds: ["sample-1"],
+        generationSeedPolicy: "fixed-per-sample" as const,
+        decoding: {},
+        verifierSha256: "b".repeat(64),
+      };
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const { runId } = yield* manager.start({
+            projectId: "proj_protocol",
+            experimentId: "fake",
+            seed: 7,
+            seeds: { training: 7, data: 7, evaluationSample: 7, generation: 7 },
+            evaluationProtocol,
+          });
+          assert.deepEqual(
+            JSON.parse(worker.spawnInputs[0]!.env.T3RL_EVALUATION_PROTOCOL_JSON!),
+            evaluationProtocol,
+          );
+          assert.deepEqual(JSON.parse(worker.spawnInputs[0]!.env.T3RL_SEED_SET_JSON!), {
+            training: 7,
+            data: 7,
+            evaluationSample: 7,
+            generation: 7,
+          });
+          emitReady(worker);
+          yield* awaitManifest(manager, runId);
+          assert.deepEqual(
+            (yield* manager.get({ runId })).manifest?.effectiveConfig.evaluationProtocol,
+            evaluationProtocol,
+          );
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
+          yield* awaitTerminal(manager, runId);
+        }),
+      );
+    }),
+  );
+
+  it.effect("refuses independent seeds that a runner cannot apply before spawning", () =>
+    Effect.gen(function* () {
+      const worker = new FakeWorkerProcess();
+      yield* withWorker(
+        worker,
+        Effect.gen(function* () {
+          const manager = yield* RlManager.RlManager;
+          const error = yield* manager
+            .start({
+              projectId: "proj_seed_validation",
+              experimentId: "fake",
+              seed: 7,
+              seeds: { training: 7, data: 99, evaluationSample: 7, generation: 7 },
+            })
+            .pipe(Effect.flip);
+          assert.equal(error.code, "InvalidExperiment");
+          assert.include(error.detail, "independent seed");
+          assert.equal(worker.spawnInputs.length, 0);
+        }),
+      );
+    }),
+  );
+
   it.effect("reaches running only after hello, and completed only after done", () =>
     Effect.gen(function* () {
       const worker = new FakeWorkerProcess();
@@ -499,9 +570,9 @@ describe("RlManager", () => {
               values: { "eval/reward": 0.875, "eval/verifier_pass_rate": 0.875 },
             }),
           );
-          yield* settle;
-          yield* TestClock.adjust("1 second");
-          yield* settle;
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
+          yield* awaitTerminal(manager, runId);
 
           const detail = yield* manager.get({ runId });
           assert.deepStrictEqual(detail.metrics, [
@@ -552,9 +623,9 @@ describe("RlManager", () => {
               values: { "eval/reward": 0.875 },
             }),
           );
-          yield* settle;
-          yield* TestClock.adjust("1 second");
-          yield* settle;
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          worker.exit(0);
+          yield* awaitTerminal(manager, runId);
 
           const detail = yield* manager.get({ runId });
           assert.deepStrictEqual(detail.metrics, [
@@ -589,10 +660,16 @@ describe("RlManager", () => {
           emitReady(worker);
           yield* awaitState(manager, runId, (state) => state === "running");
 
+          const flushed = yield* Deferred.make<void>();
+          const unsubscribe = yield* manager.subscribe({ runId }, (event) => {
+            if (event._tag === "Metrics" && event.batch.step === 1) {
+              Deferred.doneUnsafe(flushed, Effect.void);
+            }
+          });
           worker.emitStdout(metrics(1, 42));
-          yield* settle;
-          yield* TestClock.adjust("1 second");
-          yield* settle;
+          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
+          yield* Deferred.await(flushed);
+          unsubscribe();
 
           const events: RlSubscriptionEvent[] = [];
           yield* manager.subscribe({ runId }, (event) => events.push(event));
@@ -601,7 +678,6 @@ describe("RlManager", () => {
           const snapshot = events[0];
           assert.isTrue(snapshot?._tag === "Snapshot" && snapshot.metrics.length === 1);
 
-          worker.emitStdout(JSON.stringify({ type: "done", status: "completed" }));
           worker.exit(0);
           yield* awaitTerminal(manager, runId);
 

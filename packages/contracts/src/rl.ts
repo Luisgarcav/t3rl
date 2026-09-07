@@ -165,6 +165,26 @@ export const RlEvaluationProtocol = Schema.Struct({
 });
 export type RlEvaluationProtocol = typeof RlEvaluationProtocol.Type;
 
+/** Final evaluation evidence; deterministic evaluators do not have a generation seed. */
+export const RlEvaluationSample = Schema.Struct({
+  sampleId: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(256)),
+  generationSeed: Schema.NullOr(Schema.Int),
+  values: Schema.Record(
+    Schema.String.check(Schema.isPattern(METRIC_KEY_PATTERN)),
+    Schema.NullOr(Schema.Number.check(Schema.isFinite())),
+  ).check(Schema.isMaxProperties(64)),
+});
+export type RlEvaluationSample = typeof RlEvaluationSample.Type;
+
+export const RlEvaluationResult = Schema.Struct({
+  version: Schema.Literal(1),
+  protocolSha256: RlSha256,
+  samples: Schema.Array(RlEvaluationSample)
+    .check(Schema.isMinLength(1))
+    .check(Schema.isMaxLength(10_000)),
+});
+export type RlEvaluationResult = typeof RlEvaluationResult.Type;
+
 const ImmutableModelRevision = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40,64}$/)).check(
   Schema.isMaxLength(64),
 );
@@ -319,6 +339,16 @@ export const RlEnvironmentLock = Schema.Struct({
   projectPath: Schema.String.check(Schema.isMaxLength(2048)),
   lockfilePath: Schema.String.check(Schema.isMaxLength(2048)),
   lockfileSha256: RlSha256,
+  /** Exact setup files copied before worker start; absent on older runs. */
+  files: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.Literals(["pyproject.toml", "uv.lock"]),
+        sha256: RlSha256,
+        bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      }),
+    ).check(Schema.isMaxLength(2)),
+  ),
   pythonExecutable: Schema.String.check(Schema.isMaxLength(1024)),
   pythonVersion: Schema.String.check(Schema.isMaxLength(64)),
   platform: Schema.String.check(Schema.isMaxLength(256)),
@@ -410,7 +440,7 @@ export const RlStudy = Schema.Struct({
 export type RlStudy = typeof RlStudy.Type;
 
 export const RlStudyEstimator = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literals([1, 2]),
   statistic: Schema.Literals(["mean", "median", "paired-mean-delta"]),
   statisticalUnit: Schema.Literals(["run-seed", "paired-sample-within-run-seed"]),
   confidenceLevel: Schema.Number.check(Schema.isBetween({ minimum: 0.5, maximum: 0.999 })),
@@ -419,6 +449,24 @@ export const RlStudyEstimator = Schema.Struct({
   missingPairPolicy: Schema.Literals(["exclude", "fail"]),
 });
 export type RlStudyEstimator = typeof RlStudyEstimator.Type;
+
+export const RlStudyExcludedRun = Schema.Struct({
+  runId: Schema.NullOr(RlRunId),
+  trainingSeed: Schema.Int,
+  variantLabel: IdentifierSchema,
+  reason: Schema.Literals([
+    "not-completed",
+    "failed",
+    "cancelled",
+    "interrupted",
+    "missing-run",
+    "missing-evaluation",
+    "invalid-evaluation",
+    "incompatible-protocol",
+    "missing-metric",
+  ]),
+});
+export type RlStudyExcludedRun = typeof RlStudyExcludedRun.Type;
 
 export const RlStudyComparison = Schema.Struct({
   studyId: RlStudyId,
@@ -431,12 +479,22 @@ export const RlStudyComparison = Schema.Struct({
   n: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   unmatchedRuns: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   failedRuns: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  unmatchedSamples: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  excludedRuns: Schema.Array(RlStudyExcludedRun).check(Schema.isMaxLength(128)),
   baselineMean: Schema.NullOr(Schema.Number),
   candidateMean: Schema.NullOr(Schema.Number),
   pairedDelta: Schema.NullOr(Schema.Number),
   dispersion: Schema.NullOr(Schema.Number),
   interval: Schema.NullOr(Schema.Tuple([Schema.Number, Schema.Number])),
-  conclusion: Schema.Literals(["interval", "not-enough-evidence", "incompatible-protocol"]),
+  conclusion: Schema.Literals([
+    "interval",
+    "not-enough-evidence",
+    "incompatible-protocol",
+    "missing-pairs",
+    "unsupported-estimator",
+    "computation-budget-exceeded",
+    "invalid-variants",
+  ]),
 });
 export type RlStudyComparison = typeof RlStudyComparison.Type;
 

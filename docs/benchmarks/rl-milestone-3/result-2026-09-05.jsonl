@@ -1,0 +1,2 @@
+{"name":"within-budget","seeds":32,"samples":512,"resamples":1000,"conclusion":"interval","elapsedMs":306.76419200000004,"heartbeats":1002,"maximumHeartbeatGapMs":6.415174999999991,"heartbeatGapLimitMs":50,"drawBudget":20000000,"estimatorVersion":2}
+{"name":"over-budget","seeds":64,"samples":10000,"resamples":100000,"conclusion":"computation-budget-exceeded","elapsedMs":102.76416100000006,"heartbeats":39,"maximumHeartbeatGapMs":12.59606599999995,"heartbeatGapLimitMs":50,"drawBudget":20000000,"estimatorVersion":2}

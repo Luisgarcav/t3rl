@@ -3,7 +3,8 @@
 > For maintainers. This roadmap describes delivery order and remaining gates, not calendar
 > commitments.
 
-Status: Phase 1 backend and initial RL Lab client complete; end-to-end validation and measurement remain active work
+Status: Phase 1 backend/client and post-training Milestones 1–5 have implementation; local research
+validation, evidence delivery, and measured release gates remain active work
 
 Architecture: [T3RL research lab architecture](./rl-lab.md)
 
@@ -17,12 +18,32 @@ boundary changes, and update this roadmap when sequencing or acceptance criteria
 Each phase should produce a runnable demonstration, focused verification, and a transition review.
 User documentation is added only for behavior that actually ships.
 
+Track **implemented**, **verified with the named real framework/device**, and **exit gate passed**
+separately. Fake-worker tests, import checks, and reducer benchmarks establish their own bounded
+claims. They cannot close a real-training, browser-rendering, or independent-reproduction criterion.
+The [post-training delivery-status table](../superpowers/plans/2026-09-04-serious-llm-post-training.md#delivery-status-2026-09-05)
+records the current implementation slices and remaining proof.
+
+The [2026-09-05 real-framework validation](../benchmarks/rl-framework-validation/README.md) passes
+native TRL SFT/DPO on CPU/CUDA, native TRL GRPO on CUDA, and Axolotl SFT/DPO on CUDA with actual
+optimization, adapter loading, checkpoint interruption/resume, and evaluation. The subsequent
+[production-service reference](../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+passes six project-defined CUDA SFT launches through real server services, a manager checkpoint
+resume preserving seeds/protocol with matching final weights, public comparison, and offline
+archive verification/reload after removal of the project and database. It groups completed runs
+afterward and does not test real-GPU study scheduling or a preregistered hypothesis. These bounded
+single-host results retain their small-dataset and installed-environment limitations. Integrated
+client verification and independent clean-environment/second-person reproduction remain open;
+the [Release A evidence instructions](../superpowers/plans/2026-09-04-serious-llm-post-training.md#release-a-trustworthy-local-post-training)
+record the opt-in command and complete scope.
+
 ## Outcome
 
 T3RL should become agent-assisted infrastructure for reproducible reinforcement learning research.
-The delivery plan starts with one complete local experiment, then builds the scientific evidence and
-automation required for open-ended learning, and only then expands to distributed execution and a
-public research platform.
+The delivery plan starts with one complete local experiment, then a defensible investigation with
+exportable evidence and a durable hypothesis-to-outcome record. That local value is the entry gate
+for additional algorithms, distributed execution, and autonomous curricula. Each expansion needs a
+named research question and a measured constraint of the existing workflow.
 
 The phases are gates. A phase is complete when its exit criteria are demonstrated in code and tests,
 not when its feature list has been partially implemented.
@@ -198,6 +219,12 @@ automation is built on trustworthy evidence rather than on a larger collection o
 
 ## Phase 2A: research evidence and algorithm debugging
 
+The immediate local post-training delivery is
+[Release A](../superpowers/plans/2026-09-04-serious-llm-post-training.md#release-a-trustworthy-local-post-training):
+Milestones 1–5 plus minimal export and a durable research record. Studies, locked environments,
+checkpoint lineage, project definitions, and native SFT/DPO paths are implemented; the real-framework
+reference investigation and applicable client/performance gates remain distinct acceptance work.
+
 ### Goal
 
 Make experiments scientifically comparable and make algorithm failures traceable from a visualization
@@ -220,7 +247,14 @@ to the run, trajectory, checkpoint, manifest, and source evidence that produced 
   source snapshot.
 - Project-defined Gymnasium environments, callbacks, metrics, and evaluation policies.
 - Exportable research bundles containing the configuration and bounded evidence needed to reproduce a
-  displayed result.
+  displayed result, with a standalone verifier, content hashes, and explicit omitted dependencies.
+- A durable record connecting hypothesis, cited evidence, proposed change/authorization, source or
+  definition change, baseline/candidate/ablation runs, outcome, and limitations. It survives the
+  conversation without requiring an autonomous research controller.
+- Separate evidence for artifact integrity, environment reconstruction, trainer-state resume,
+  numerical reproducibility within a recorded platform/tolerance, and empirical repeatability on an
+  independent holdout. The [guarantee definitions](../superpowers/plans/2026-09-04-serious-llm-post-training.md#reproducibility-guarantees)
+  govern visible summaries and exports.
 
 ### Exit criteria
 
@@ -232,6 +266,18 @@ to the run, trajectory, checkpoint, manifest, and source evidence that produced 
 - Deep instrumentation is opt-in, bounded, measured, and visibly distinguished from standard runs.
 - Custom metrics cannot modify the core run lifecycle or bypass storage and transport limits.
 - At least one non-PPO algorithm uses the same lifecycle, manifest, and artifact contracts.
+- A single-GPU TRL case uses a project dataset, baseline and one intervention, at least three
+  independent training seeds, a predeclared final holdout, and an ablation. It exercises actual
+  save/load/resume and records the numerical tolerance and hardware; lower training loss is not the
+  measured research claim.
+- The public comparison consumes the retained evidence its statistical unit names, and independent
+  recomputation from the exported bundle matches. Missing samples, failures, incompatible protocols,
+  and insufficient evidence remain visible.
+- A second researcher verifies the bundle without the source database, reconstructs the declared
+  environment, and records a rerun with its matches, discrepancies, and limitations. Verifying hashes
+  alone does not close this criterion.
+- The research record preserves negative, null, and inconclusive outcomes. A positive improvement is
+  not a requirement for a useful or valid investigation.
 
 ## Phase 2B: agent-assisted research loop
 
@@ -240,8 +286,9 @@ to the run, trajectory, checkpoint, manifest, and source evidence that produced 
 > evidence. Its algorithm catalog spans the major RL families and treats RLVR, RLHF, and RLAIF as
 > reward regimes orthogonal to PPO, GRPO, RLOO, and related optimizers. This does not satisfy the
 > Phase 2B gate: most entries still need worker adapters, execution is not yet an autonomous
-> controller, budgets are not yet server-enforced across turns, and durable hypothesis-to-outcome
-> records and agent-facing evidence tools remain open.
+> controller and budgets are not yet server-enforced across turns. Project-scoped evidence tools
+> already exist; the minimum durable record and independently verifiable export now belong to
+> Phase 2A / Release A. This phase extends that record into a bounded agent-assisted execution loop.
 
 ### Goal
 
@@ -257,8 +304,8 @@ without granting it an invisible or unbounded automation path.
 - A workflow for an agent to formulate a diagnosis, cite evidence, prepare a reviewable code or
   experiment diff, and propose an ablation.
 - Explicit approval before starting project-controlled training or expanding a compute budget.
-- A durable research record linking hypothesis, evidence, proposal, authorization, code change, run,
-  and outcome.
+- Reuse the Phase 2A durable record for multi-turn proposals, explicit authorization, retry handling,
+  and accumulated compute budgets; do not create a second hypothesis/outcome store.
 - Evaluation tasks for diagnosis quality, evidence citation, false conclusions, and unnecessary
   experiment generation.
 
@@ -273,6 +320,10 @@ without granting it an invisible or unbounded automation path.
   fields in RL contracts.
 
 ## Phase 2C: continual curricula and open-ended learning
+
+Enter after the local evidence workflow demonstrates a research need for sequential task selection.
+Record the question, fixed evaluation, baseline, budget, and why ordinary independent runs cannot
+answer it. Curriculum automation is not a prerequisite for the first useful public local workflow.
 
 ### Goal
 
@@ -319,6 +370,13 @@ checkpoint lineage, TRL/Axolotl training methods, distributed launchers, vLLM su
 adoption, retention, and mobile delivery, lives in the
 [serious LLM post-training delivery plan](../superpowers/plans/2026-09-04-serious-llm-post-training.md).
 
+That plan spans Phase 2A's local evidence delivery as well as this scaling phase; its location here
+does not defer checkpoint identity, project definitions, comparison, or minimal export until scale.
+All twelve requested capabilities remain in scope. RLOO/PPO, launchers, FSDP/DeepSpeed, and vLLM enter
+when a recorded experiment requires them, after Release A. The native environment pins TRL 1.10.0,
+whose PPO trainer is experimental; support decisions must use the pinned version matrix documented
+in [framework adapters](./rl-framework-adapters.md#delivery-order).
+
 ### Goal
 
 Run the same research model on larger hardware and external schedulers without turning T3RL into a
@@ -330,7 +388,8 @@ new cluster scheduler or leaking backend-specific concepts into clients.
 - Per-environment concurrency, compute-budget, artifact, and retention policies.
 - A scheduler/runner adapter contract for local processes, existing cluster schedulers, and managed
   research backends.
-- Checkpoint publication, explicit resume, process adoption where safe, and preemption reporting.
+- Extend the existing local checkpoint/resume contract to distributed publication, process adoption
+  where safe, and preemption reporting.
 - Runner adapters selected by demonstrated research need, such as CleanRL or RLlib.
 - External artifact storage behind the existing artifact identity and authorization model.
 - Backpressure and aggregation for many simultaneous metric streams.
@@ -366,7 +425,8 @@ not build it.
 - Cross-platform web, desktop, and headless-server verification.
 - Mobile monitoring, alerting, artifact summaries, and safe cancellation.
 - Storage migrations, protocol compatibility policy, and backward-compatible run readers.
-- Retention, export, archival, and recoverable cleanup workflows.
+- Advanced retention, streamed export, archival, and recoverable cleanup built on the Phase 2A
+  independently verifiable bundle format.
 - Security review of process spawning, environment inheritance, project paths, artifacts, remote
   authorization, and agent-triggered execution.
 - Performance budgets and regression benchmarks for worker overhead, server memory, transport, charts,
@@ -405,6 +465,10 @@ These requirements apply to every phase:
 - Preserve effective defaults, seeds, sample counts, instrumentation, aggregation, and source evidence.
 - Never present a single run as a statistically established conclusion.
 - Treat agent interpretations as evidence-linked hypotheses.
+- Distinguish byte integrity, environment reconstruction, trainer-state resume, numerical agreement,
+  and empirical repeatability; label only the guarantee actually verified.
+- Preserve null, negative, failed, and inconclusive experiments without redefining the holdout or
+  acceptance threshold after results arrive.
 
 ### Security and control
 
@@ -472,9 +536,14 @@ The project is ready to be presented as serious RL research infrastructure when 
 - multi-seed comparison with scientifically honest uncertainty;
 - one real algorithm failure diagnosed through retained evidence;
 - one agent-assisted ablation with cited evidence and explicit approval;
-- one bounded continual-curriculum demonstration;
+- a durable hypothesis-to-outcome record and independently verifiable evidence export;
 - measured performance and failure behavior;
-- a technical case study that another researcher can reproduce.
+- a single-GPU technical case study that another researcher can reproduce, with independent holdout
+  evaluation, checkpoint/resume, and explicit limits on numerical and statistical claims.
+
+Bounded continual curricula, expanded online algorithms, distributed execution, advanced retention,
+and mobile delivery retain their later phase exit gates. They extend the first public research
+workflow after a concrete need is demonstrated.
 
 This definition values research evidence and systems quality over the number of supported algorithms,
 environments, charts, or integrations.

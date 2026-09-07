@@ -110,6 +110,53 @@ const compatibility = {
 };
 
 runStoreLayer("RunStore", (it) => {
+  it.effect("indexes deterministic evaluation samples by their verified source artifact", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const source = {
+        runId: "run_evaluation",
+        artifactId: "artifact_eval",
+        artifactSha256: "c".repeat(64),
+      };
+      const protocolSha256 = "b".repeat(64);
+      yield* store.indexEvaluationSamples({
+        ...source,
+        evaluation: {
+          version: 1,
+          protocolSha256,
+          samples: [
+            { sampleId: "b", generationSeed: 7, values: { "eval_after/loss": 2 } },
+            {
+              sampleId: "a",
+              generationSeed: null,
+              values: { "eval_after/loss": 1, "eval_after/accuracy": null },
+            },
+          ],
+        },
+      });
+      const samples = yield* store.listEvaluationSamples({ ...source, protocolSha256 });
+      assert.deepEqual(
+        samples.map((sample) => sample.sampleId),
+        ["a", "b"],
+      );
+      assert.equal(samples[0]?.generationSeed, null);
+      assert.equal(samples[0]?.values["eval_after/accuracy"], null);
+      assert.deepEqual(
+        yield* store.listEvaluationSamples({
+          ...source,
+          protocolSha256,
+          artifactSha256: "d".repeat(64),
+        }),
+        [],
+      );
+      yield* store.indexEvaluationSamples({
+        ...source,
+        evaluation: { version: 1, protocolSha256, samples: [samples[0]!] },
+      });
+      assert.equal((yield* store.listEvaluationSamples({ ...source, protocolSha256 })).length, 1);
+    }),
+  );
+
   it.effect("round trips a requested run into a listing", () =>
     Effect.gen(function* () {
       const store = yield* RunStore;

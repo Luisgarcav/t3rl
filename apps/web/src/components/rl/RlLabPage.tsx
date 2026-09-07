@@ -63,6 +63,7 @@ import { RlDiagnosticsPanel } from "./diagnostics/RlDiagnosticsPanel";
 import { analyzeRlDiagnostics } from "./diagnostics/rlDiagnostics";
 import { type RlLabView, rlLabViewRequiresRun } from "./rlLabViews";
 import { RlMetricChart } from "./RlMetricChart";
+import { RlRunEvidenceExport } from "./RlRunEvidenceExport";
 import {
   formatRlBytes,
   formatRlArtifactIdentity,
@@ -959,6 +960,13 @@ function RunDetail({
                 onRunsRefresh={onRunsRefresh}
                 onStarted={onStarted}
               />
+              <RlRunEvidenceExport
+                key={`${environmentId}:${projectId}:${runId}`}
+                enabled={isTerminalRlRunState(summary.state)}
+                environmentId={environmentId}
+                projectId={projectId}
+                runId={runId}
+              />
               <RunCancellationControl
                 environmentId={environmentId}
                 runId={runId}
@@ -1284,7 +1292,7 @@ function LineageCard({
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
                   <Badge size="sm" variant="outline">
-                    {edge.relation === "resume" ? "Exact resume" : "Adapter warm start"}
+                    {edge.relation === "resume" ? "Trainer-state resume" : "Adapter warm start"}
                   </Badge>
                   <span className="truncate font-mono">{edge.parentRunId}</span>
                 </div>
@@ -1416,7 +1424,7 @@ function ArtifactRow({
           </Badge>
           {artifact.evidence?._tag === "Checkpoint" ? (
             <Badge size="sm" variant={artifact.state === "ready" ? "success" : "outline"}>
-              {artifact.state === "ready" ? "Exact resume" : artifact.state}
+              {artifact.state === "ready" ? "Trainer-state resume" : artifact.state}
             </Badge>
           ) : artifact.evidence?._tag === "Adapter" ? (
             <Badge size="sm" variant="secondary">

@@ -1,6 +1,6 @@
 {
   "name": "t3",
-  "version": "0.0.33",
+  "version": "0.0.35",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -33,6 +33,7 @@
     "effect": "catalog:",
     "msgpackr-extract": "3.0.4",
     "node-pty": "^1.1.0",
+    "tar": "7.5.22",
     "yaml": "catalog:"
   },
   "devDependencies": {

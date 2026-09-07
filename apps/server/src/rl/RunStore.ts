@@ -21,6 +21,8 @@ import {
   RlStudyDefinition,
   RlSeedSet,
   RlStudyNotFoundError,
+  RlEvaluationSample,
+  type RlEvaluationResult,
   isTerminalRlRunState,
   type RlArtifactKind,
   type RlArtifactState,
@@ -90,6 +92,19 @@ export interface RecordArtifactInput {
 }
 
 export interface RunStoreShape {
+  /** Replaces a derived index only after the source artifact has been verified. */
+  readonly indexEvaluationSamples: (input: {
+    readonly runId: string;
+    readonly artifactId: string;
+    readonly artifactSha256: string;
+    readonly evaluation: RlEvaluationResult;
+  }) => Effect.Effect<void, RunStoreError>;
+  readonly listEvaluationSamples: (input: {
+    readonly runId: string;
+    readonly protocolSha256: string;
+    readonly artifactId: string;
+    readonly artifactSha256: string;
+  }) => Effect.Effect<ReadonlyArray<RlEvaluationSample>, RunStoreError>;
   readonly insertRequested: (
     input: InsertRequestedInput,
   ) => Effect.Effect<{ readonly runId: string; readonly inserted: boolean }, RunStoreError>;
@@ -196,6 +211,12 @@ const encodeStudyDefinition = Schema.encodeSync(Schema.fromJsonString(RlStudyDef
 const decodeStudyDefinition = Schema.decodeUnknownSync(Schema.fromJsonString(RlStudyDefinition));
 const encodeSeedSet = Schema.encodeSync(Schema.fromJsonString(RlSeedSet));
 const decodeSeedSet = Schema.decodeUnknownSync(Schema.fromJsonString(RlSeedSet));
+const encodeEvaluationValues = Schema.encodeSync(
+  Schema.fromJsonString(RlEvaluationSample.fields.values),
+);
+const decodeEvaluationValues = Schema.decodeUnknownSync(
+  Schema.fromJsonString(RlEvaluationSample.fields.values),
+);
 const decodeArtifactContentManifest = Schema.decodeUnknownSync(
   Schema.Array(
     Schema.Struct({
@@ -206,6 +227,7 @@ const decodeArtifactContentManifest = Schema.decodeUnknownSync(
   ),
 );
 const isPersistenceSqlError = Schema.is(PersistenceSqlError);
+const isStudyNotFoundError = Schema.is(RlStudyNotFoundError);
 
 const toSummary = (row: RunRow): RlRunSummary =>
   decodeRunSummary({
@@ -812,9 +834,7 @@ const makeRunStore = Effect.gen(function* () {
       });
     }).pipe(
       Effect.mapError((error) =>
-        Schema.is(RlStudyNotFoundError)(error)
-          ? error
-          : toPersistenceSqlError("rl.getStudy")(error),
+        isStudyNotFoundError(error) ? error : toPersistenceSqlError("rl.getStudy")(error),
       ),
     );
 
@@ -827,6 +847,49 @@ const makeRunStore = Effect.gen(function* () {
         }),
       )
       .pipe(Effect.mapError(toPersistenceSqlError("rl.updateStudyRun")));
+
+  const indexEvaluationSamples: RunStoreShape["indexEvaluationSamples"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`DELETE FROM rl_evaluation_samples WHERE run_id = ${input.runId} AND protocol_sha256 = ${input.evaluation.protocolSha256}`;
+          for (let offset = 0; offset < input.evaluation.samples.length; offset += 100) {
+            const rows = input.evaluation.samples.slice(offset, offset + 100).map((sample) => ({
+              run_id: input.runId,
+              protocol_sha256: input.evaluation.protocolSha256,
+              sample_id: sample.sampleId,
+              generation_seed: sample.generationSeed,
+              values_json: encodeEvaluationValues(sample.values),
+              source_artifact_id: input.artifactId,
+              source_artifact_sha256: input.artifactSha256,
+            }));
+            yield* sql`INSERT INTO rl_evaluation_samples ${sql.insert(rows)}`;
+          }
+        }),
+      )
+      .pipe(Effect.mapError(toPersistenceSqlError("rl.indexEvaluationSamples")));
+
+  const listEvaluationSamples: RunStoreShape["listEvaluationSamples"] = (input) =>
+    sql<{
+      readonly sampleId: string;
+      readonly generationSeed: number | null;
+      readonly valuesJson: string;
+    }>`
+      SELECT sample_id AS "sampleId", generation_seed AS "generationSeed", values_json AS "valuesJson"
+      FROM rl_evaluation_samples
+      WHERE run_id = ${input.runId} AND protocol_sha256 = ${input.protocolSha256}
+        AND source_artifact_id = ${input.artifactId} AND source_artifact_sha256 = ${input.artifactSha256}
+      ORDER BY sample_id LIMIT 10000
+    `.pipe(
+      Effect.map((rows) =>
+        rows.map((row) => ({
+          sampleId: row.sampleId,
+          generationSeed: row.generationSeed,
+          values: decodeEvaluationValues(row.valuesJson),
+        })),
+      ),
+      Effect.mapError(toPersistenceSqlError("rl.listEvaluationSamples")),
+    );
 
   return RunStore.of({
     insertRequested,
@@ -846,6 +909,8 @@ const makeRunStore = Effect.gen(function* () {
     createStudy,
     getStudy,
     updateStudyRun,
+    indexEvaluationSamples,
+    listEvaluationSamples,
   });
 });
 

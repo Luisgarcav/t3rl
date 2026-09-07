@@ -1,6 +1,6 @@
 # t3rl
 
-**An open, agent-assisted control plane for reproducible reinforcement learning research.**
+**An open, agent-assisted workspace for reinforcement learning and LLM post-training research.**
 
 t3RL brings experiment execution, live evidence, run comparison, diagnostics, and coding agents
 into one desktop workspace. It builds on [T3 Code](https://github.com/pingdotgg/t3code), preserving
@@ -24,12 +24,14 @@ Gymnasium, Stable-Baselines3, TRL, and Axolotl adapters for bounded LLM post-tra
   decisions, and rewards.
 - Compares compatible runs across seeds while surfacing configuration, source, and environment
   drift.
-- Creates reproducible multi-seed studies with paired-seed estimators, confidence intervals, and
-  explicit held-out evaluation protocols.
+- Schedules multi-seed studies and compares verified held-out samples with explicit statistical
+  units, confidence intervals, failed or unmatched runs, and evaluation protocols.
 - Saves verified checkpoints and adapter artifacts with content identity and lineage, then supports
-  exact resume and compatible warm-start flows.
+  trainer-state resume and compatible warm-start flows.
 - Loads project-owned experiment definitions from `.t3rl/experiments/` while snapshotting local
   datasets, verifiers, and definitions into each run.
+- Retains immutable research records and exports selected evidence with hashes, declared omissions,
+  and a standalone verifier that works without the originating database.
 - Provides explainable diagnostic signals for return collapse, non-finite values, excessive KL,
   low entropy, divergent value loss, stalled streams, and train/evaluation gaps.
 - Explores retained metrics as a chart, bounded data table, or declarative source, and explains the
@@ -39,24 +41,52 @@ Gymnasium, Stable-Baselines3, TRL, and Axolotl adapters for bounded LLM post-tra
 - Gives Codex, Claude Code, Cursor, Grok, and OpenCode project-scoped tools for inspecting RL
   evidence and, with the active permission mode, starting or cancelling runs.
 
-## What's new in v0.0.34
+## What's new in v0.0.35
 
-This release turns the LLM preview into a reproducible post-training workflow:
+This alpha release strengthens the evidence behind the local post-training workflow:
 
-- Immutable model, dataset, verifier, environment, artifact, and checkpoint identity is recorded
-  with SHA-256 evidence and compatibility checks.
-- Runs can publish bounded checkpoints, resume exactly, or warm-start another compatible method;
-  cancellation requests a final checkpoint within a fixed deadline.
-- Studies schedule independent seeds and compare paired results with estimator metadata, uncertainty,
-  exclusions, and protocol drift made visible.
-- Projects can define versioned SFT, DPO, or GRPO experiments in `.t3rl/experiments/*.json`; local
-  inputs are validated, contained under the project root, snapshotted, and reverified before launch.
-- Native TRL SFT/DPO execution and fixed Axolotl configuration translation share typed datasets,
-  normalized metrics, held-out evaluation claims, LoRA publication, resume, and warm-start semantics.
-- Runner capabilities are method-specific, so CPU-capable SFT/DPO and CUDA-bound GRPO report separate
-  availability and actionable remedies.
-- The RL agent toolkit now covers experiment validation, checkpoints, studies, comparisons, and
-  warm-start operations in addition to run inspection and control.
+- Study comparisons use verified per-sample evaluation artifacts. Estimator version 2 reports the
+  effective statistical unit, exclusions, and insufficient evidence, with bounded computation.
+- Checkpoint children preserve their parent's seed roles, frozen evaluation protocol, and input
+  identity. Resume checks compare input content across each run's separate snapshot directory.
+- Immutable research records connect hypotheses, evidence, proposed changes, outcomes, and
+  limitations through project-scoped agent tools.
+- Evidence exports retain available source snapshots, environment setup files, evaluation samples,
+  and selected artifacts. A standalone Python verifier checks included bytes and reports omissions;
+  web/desktop provides a signed download from the connected environment.
+- Real TRL and Axolotl SFT/DPO checks exercise optimization, interruption, trainer-state resume,
+  independent adapter loading, and held-out evaluation on the recorded CPU/CUDA paths.
+
+The [v0.0.35 source release](https://github.com/Luisgarcav/t3rl/releases/tag/v0.0.35) is an alpha
+prerelease. Build from source using the instructions below; it does not include desktop installers.
+
+### What has been verified
+
+The [framework report](./docs/benchmarks/rl-framework-validation/README.md) records fourteen
+SFT/DPO lifecycle cases and a native TRL GRPO CUDA case on one Linux host. A separate
+[service integration result](./docs/benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+launches six CUDA SFT runs and one checkpoint child through the real server services, compares three
+seed pairs, exports their evidence, and reloads all seven adapters offline after deleting the
+originating project and database.
+
+These are bounded integration results. The SFT/DPO fixture has a tiny model and two held-out
+records; it does not establish useful model improvement. Clean-machine training reproduction, a
+preregistered investigation, integrated client verification, and full-system performance remain
+open acceptance criteria for the first local milestone, **Release A**.
+
+## Mini roadmap
+
+| Order                   | Next development                                                                                                                                                            | Completion evidence                                                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1 · Local research      | Complete one preregistered investigation with baseline, candidate, ablation, independent holdout, and at least three training seeds.                                        | An exported conclusion and limitations that another researcher can reproduce from a clean environment. |
+| 2 · Product validation  | Exercise GPU study scheduling, finish the declared adapter checks, and verify web/desktop control, evidence downloads, and remote reconnect.                                | Integrated lifecycle results and measured server, WebSocket, memory, and renderer budgets.             |
+| 3 · Training breadth    | Add RLOO, then a version-scoped PPO integration when the reference investigation needs them.                                                                                | Real training, evaluation, checkpoint, and resume evidence for each supported method.                  |
+| 4 · Scale and operation | Add distributed launchers, FSDP/DeepSpeed, and supervised vLLM as capacity or throughput requires; then process recovery, advanced storage controls, and mobile monitoring. | Two-GPU and failure-recovery results, recoverable storage operations, and remote mobile verification.  |
+
+The [development roadmap](./docs/internals/rl-lab-roadmap.md) and
+[post-training plan](./docs/superpowers/plans/2026-09-04-serious-llm-post-training.md) track the full
+scope and acceptance criteria. Expansion follows the local reference investigation; these are
+priorities, not promised release dates.
 
 ## RL execution coverage
 
@@ -71,13 +101,17 @@ The bundled CPU runner uses `MlpPolicy` and ships with these experiments:
 | TD3       | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 | DDPG      | Off-policy actor-critic         | Continuous   | `Pendulum-v1`       |
 
-Optional LLM post-training adapters support these method families:
+Optional LLM post-training adapters implement these method families:
 
 | Method | Runner support | Dataset contract                       | Evaluation claim    |
 | ------ | -------------- | -------------------------------------- | ------------------- |
 | SFT    | TRL, Axolotl   | Text or conversation                   | Held-out loss       |
 | DPO    | TRL, Axolotl   | Prompt/chosen/rejected preference rows | Preference accuracy |
 | GRPO   | TRL, Axolotl   | Prompt/reference RLVR rows             | Verifier pass rate  |
+
+Recorded framework validation covers native TRL SFT/DPO on CPU and CUDA, Axolotl SFT/DPO on CUDA,
+and native TRL GRPO on CUDA. Axolotl GRPO is implemented but remains unverified in this release's
+real-framework matrix. Availability depends on the selected interpreter and method capabilities.
 
 The bundled single-GPU GRPO preview includes these experiments:
 
@@ -93,14 +127,14 @@ the measurement has headroom in both directions. Across 20 seeds of the untraine
 the noise floor of a single evaluation from a standard deviation of 0.111 to 0.021, and no seed sat
 at the ceiling. Both datasets are kept: a run's dataset SHA-256 records which one produced it.
 
-The same task also runs through Axolotl. Because Axolotl pins exact dependency versions that
-conflict with the native TRL runner, it lives in its own environment named by
-`T3RL_PYTHON_AXOLOTL`. Both runners resolve the same model, dataset, verifier, and split policy and
-emit the same artifacts, so a comparison between them is attributable to the backend.
+The Axolotl adapter lives in its own environment named by `T3RL_PYTHON_AXOLOTL` because its
+dependency constraints conflict with the native TRL runner. Both use the shared experiment and
+evidence contracts. Cross-runner comparisons still require compatible evaluation protocols;
+matching dataset names alone does not isolate a backend effect.
 
 The workers record the resolved model commit, dataset SHA-256, split policy, verifier identity,
 dependency fingerprint, execution backend, and token/wall-clock/GPU-hour limits. They evaluate a
-versioned holdout before and after training, emits optimizer and resource metrics, and retains
+versioned holdout before and after training, emit optimizer and resource metrics, and retain
 bounded prompt/completion evidence plus a separate evaluation artifact. Checkpoint policy is
 explicit and retained LoRA adapters carry verified base-model and source-checkpoint lineage. vLLM,
 distributed scheduling, arbitrary unvalidated launch commands, and production-scale datasets are
@@ -223,6 +257,9 @@ vp run dist:desktop:win    # Windows NSIS installer
    findings.
 7. From the right panel, use **Specialists** to prepare a reusable research role or
    **Autoresearch** to draft a budgeted, approval-gated iteration in the agent composer.
+8. Once a run has stopped, select **Export evidence** to download a verified inventory and retained
+   artifacts. See the [evidence guide](./docs/user/rl-evidence.md) for offline verification and
+   agent-assisted exports that include studies, research records, or full checkpoints.
 
 Every intentional rerun receives a new run ID. Reconnecting to an existing run resumes its live
 view without duplicating metric points or artifacts.
@@ -241,6 +278,8 @@ tools are available to every built-in provider without additional RL-specific co
 | Compare configurations, studies, and results            | `rl_compare_runs`, `rl_compare_study`                                 |
 | Read logs, summaries, evaluations, and behavior replays | `rl_read_artifact`                                                    |
 | Execute, resume, warm-start, or stop training           | `rl_start_run`, `rl_resume_run`, `rl_warm_start_run`, `rl_cancel_run` |
+| Retain and inspect research records                     | `rl_record_research`, `rl_get_research_record`                        |
+| Export selected runs, studies, and research evidence    | `rl_export_evidence`                                                  |
 
 The server derives project scope from the agent's thread, so a tool call cannot select another
 project. Metric responses and textual artifacts are bounded; binary models are not copied into the
@@ -258,13 +297,13 @@ flowchart TB
     end
 
     server["Node server — execution authority<br/>Capability probes · Lifecycle · Supervision · Artifact authorization"]
-    store[("Project run store<br/>Manifest · Metrics · Artifacts")]
+    store[("Project evidence<br/>Runs · Studies · Artifacts · Research records")]
 
     subgraph adapters["Replaceable Python runner adapters"]
         direction LR
         sb3["Stable-Baselines3<br/>Control tasks · Evaluation trajectories · Models"]
-        trl["TRL native<br/>GRPO/RLVR · Before/after evaluation · Completion evidence"]
-        axolotl["Axolotl adapter<br/>GRPO/RLVR · Own interpreter · Same protocol"]
+        trl["TRL native<br/>SFT · DPO · GRPO/RLVR · Checkpoints · Evaluation"]
+        axolotl["Axolotl adapter<br/>SFT · DPO · GRPO/RLVR · Own interpreter"]
         distributed["Distributed launchers — planned<br/>Accelerate · FSDP · DeepSpeed · vLLM sidecar"]
     end
 
@@ -283,13 +322,22 @@ without coupling the UI to a particular RL framework.
 
 ## Current limits
 
-- Each run uses one seed and one local worker process. Control experiments use CPU; the bundled
-  GRPO preview requires one CUDA GPU. Multi-seed comparisons combine separate retained runs.
-- Active processes are marked `interrupted` after a server restart; checkpoint resume is not yet
-  implemented.
-- The bundled experiment catalog is fixed and intentionally small.
-- The GRPO preview uses a small fixed holdout and does not retain checkpoints. It does not yet
-  support vLLM, arbitrary models, or distributed launchers.
+- Each run uses one training seed and one local worker process. Control experiments use CPU; the bundled
+  GRPO preview requires one CUDA GPU. Studies combine separate runs and record the supported
+  training, data, evaluation, and generation seed roles.
+- Active runs are marked `interrupted` after a server restart. A verified compatible checkpoint can
+  start a new child; automatic adoption of an existing worker process is still planned.
+- Bundled experiments are intentionally small. Project-owned definitions extend the catalog within
+  the supported method and dataset contracts; they are not arbitrary trainer launch commands.
+- Checkpoints and LoRA adapters are retained according to explicit policy. Restoring trainer state
+  and verifying artifact hashes do not guarantee identical results across hardware or frameworks.
+- Sample-based study evidence is implemented for offline TRL/Axolotl evaluation. GRPO runs with
+  only aggregate evaluation metrics report missing sample evidence for those comparisons.
+- vLLM, distributed launchers, and production-scale training remain planned. The named lifecycle
+  checks cover one host; clean-machine reproduction, GPU study scheduling, integrated client checks,
+  and full-system performance budgets remain open.
+- Evidence archives are bounded to 12 runs, 512 MiB of included evidence, and 4,096 files. Omitted
+  dependencies or checkpoints remain explicit; archive integrity is separate from rerunning training.
 - Diagnostics are inspection heuristics, not causal conclusions or universal RL thresholds.
 - Autoresearch prepares a single reviewed iteration; it does not edit code, launch training, expand
   budgets, or loop autonomously without explicit approval.
@@ -298,10 +346,12 @@ without coupling the UI to a particular RL framework.
 ## Documentation
 
 - [RL Lab user guide](./docs/user/rl-lab.md)
+- [Export and verify evidence](./docs/user/rl-evidence.md)
 - [RL Lab architecture](./docs/internals/rl-lab.md)
 - [Framework adapter architecture](./docs/internals/rl-framework-adapters.md)
 - [Algorithm coverage](./docs/internals/rl-algorithm-coverage.md)
 - [Development roadmap](./docs/internals/rl-lab-roadmap.md)
+- [Post-training plan and delivery status](./docs/superpowers/plans/2026-09-04-serious-llm-post-training.md)
 - [Install and first run](./docs/user/install.md)
 - [Remote access](./docs/user/remote-access.md)
 - [Contributor guide](./CONTRIBUTING.md)

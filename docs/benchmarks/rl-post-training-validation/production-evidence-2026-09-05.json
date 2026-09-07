@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "status": "passed",
+  "scope": "Six actual CUDA TRL SFT runs plus one checkpoint resume launched with real RlManager, WorkerSpawnerLive, CapabilitiesLive, project Experiments, SourceEvidenceLive and SQLite",
+  "archive": ".t3/serious-validation/production-evidence/sft-production-evidence.tar",
+  "originalProjectAndSqliteRemovedBeforeVerification": true,
+  "sourceRevision": "400ea16dae6a872df312cdc8745407ada33a8042",
+  "workerHashes": {
+    "axolotl_offline_worker.py": "86cb85a8f799b4b0d445b0d3189d04e538c8f430ebf6a6c59d030280d1b1d75d",
+    "axolotl_reward.py": "dfac970155a856750aae9c8d1107e898d767f2d5d51f2b54f03c1eb9abbb2799",
+    "axolotl_worker.py": "225af7820b23c65517c0f79b361bc8f58c5593bb7af1e8fcbd7df53314434f06",
+    "checkpointing.py": "5058472deb6fe07363d55ac251815c1e571f0f3c3e14e4264739b4b2d9915b78",
+    "fake_worker.py": "e6a981a9718da1a38ac6ad504f76dce594aafc3230ab89c4e7e64801750c2d02",
+    "offline.py": "48bec2516365725ff9b84feba46d17683100c39d597d7516a47837c375904ea0",
+    "offline_validation.py": "94fadebee0a79c7157d980d4dc69bc1854dc73ea7e7acee5ad85c92e278b17bc",
+    "rlvr.py": "85704dab40063e2dc2b419ab3a3f9f3f9ae277185257265dae6da1e949e92e05",
+    "sb3_worker.py": "55f8f1f7fa1c16418609cc12b2e87bab4267212053f542ac54d4c4a8445b3f29",
+    "test_axolotl_offline_worker.py": "c2aac4438e270997c39433ee461ab83c565a46c25be6a96d28e5bb1dfe9155c9",
+    "test_axolotl_worker.py": "40dd8fb57af6ff9b3a6c818c68e9d0f96cfbb4eb3f0d9205c359df17e4b3cbb4",
+    "test_checkpointing.py": "2e2262dd786dc307dc1900f14712d78b87adbcc8c667a209ba2700c52ef0332f",
+    "test_fake_worker.py": "5b88c99bafe303dad9043b418bc9b5a8dcade9bb9d999dd3477c8f868d2a69eb",
+    "test_offline.py": "36e6cbb8c58526316c0499441881c5891dfff6546ee0163f00e05b081b43b34b",
+    "test_offline_gpu_smoke.py": "00b57e989a348a164c264c69ed457914851e88ee595ec676bb2eedb65892963a",
+    "test_rlvr.py": "29528929b29b22e7b6225212f3412ef7db2af87186d3b411a61d5ae8fe7d4718",
+    "test_sb3_worker.py": "ee5b6ba5f92519e68caaf50e1768b4fda4ec8bac30ae3fbbb2e5d4e2a89cbd77",
+    "test_trl_worker.py": "0451e28027e67dc08b9515db5dd40227b1fc2a9ca6645030e387667a933c2285",
+    "trl_offline_worker.py": "a27b5ee410e9077ef4d04396c79b5e71a7abfbe152ee3238563b542885b4553f",
+    "trl_worker.py": "32d3d4e644c713e9790f20f63c7db2206aa8b7798b28294758617be0db9b51e7"
+  },
+  "modelRevision": "39c2c9dfde4831bdd1ede4b8ca77bb57d367125f9c5105ee10382c413b355bb8",
+  "modelHashes": {
+    "config.json": "3543fb65e8fb3d964d6a082c3721b440f6e7bdbc0397407a78712eca8a6428f6",
+    "generation_config.json": "28add440a0726cb65a3b9f63d6b41ebdd6c253de4deb5b7337ed3716eb68b9b5",
+    "model.safetensors": "4b68924fbd2ff626fd3241d0eb7eec8893d49c8c653a629bad536eaed76e518f",
+    "tokenizer.json": "50fde4b619726ab5da3bf257e5415b898e3bf1347c67d90e36c39fcafb4a15b7",
+    "tokenizer_config.json": "474ea7491fc2751629ed89445365f459605de7e5b7158b7c417dcb229aeb40f7"
+  },
+  "environmentHashes": {
+    "pyproject.toml": "7cb1ef57a09db4f553f0d4d2d5283ea6b339ad8956a44ef981543dc780579808",
+    "uv.lock": "bc0814a37063388dff1ebc84b5385bdd0841f79de20a55d9459d90472fa6720b"
+  },
+  "comparison": {
+    "studyId": "study_production_sft_reference",
+    "protocolSha256": "3b7d76b67b70decc1283c1a84ee174096778dea2d3b885257159c0edfacca4c0",
+    "baselineLabel": "zero_lr",
+    "candidateLabel": "trained",
+    "metricKey": "eval_after/loss",
+    "estimator": {
+      "version": 2,
+      "statistic": "paired-mean-delta",
+      "statisticalUnit": "paired-sample-within-run-seed",
+      "confidenceLevel": 0.95,
+      "resamplingSeed": 17,
+      "resampleCount": 10000,
+      "missingPairPolicy": "fail"
+    },
+    "seedSet": [7, 19, 41],
+    "n": 3,
+    "unmatchedRuns": 0,
+    "failedRuns": 0,
+    "unmatchedSamples": 0,
+    "excludedRuns": [],
+    "baselineMean": 3.7519192695617676,
+    "candidateMean": 3.726718743642171,
+    "pairedDelta": -0.025200525919596352,
+    "dispersion": 0.006741909253438776,
+    "interval": [-0.03250535329182943, -0.019576390584309895],
+    "conclusion": "interval"
+  },
+  "exported": {
+    "version": 1,
+    "exportId": "export_599605e1ae78afd508697e9fda8a507dd3867111f85ca55f",
+    "projectId": "production-sft-reference",
+    "sha256": "e22d23382d2771567c453bac973af884b5dd584e1eeac93b85e1efc9e5d03bde",
+    "indexSha256": "599605e1ae78afd508697e9fda8a507dd3867111f85ca55f05530d77b6aa8805",
+    "bytes": 6453760,
+    "fileCount": 245,
+    "omittedCount": 26
+  },
+  "indexedSamples": 12,
+  "runEvidence": [
+    {
+      "runId": "run_5f366b374c5f42f692b898ed",
+      "variant": "zero_lr",
+      "trainingSeed": 7,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:47:50.931Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.7519192695617676,
+      "checkpointSha256": "e3995b2af0cb6a6102a94de519a308cd7f6c3077aa1036366e08c3ce87b114f7",
+      "evaluationSha256": "dded6e631397e42a2933d9a9db4e99c08f29135ae00484c129ca36e2ed7a2196"
+    },
+    {
+      "runId": "run_e63ca1731cb649a2961861a8",
+      "variant": "trained",
+      "trainingSeed": 7,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:47:59.786Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.7190725803375244,
+      "checkpointSha256": "94d2a3930b7947c6b1fc3fc0644478aef83dc759f752c8a85206be6b9ae6a9dc",
+      "evaluationSha256": "29ff9b92904d9cda8acb8c6be99454dcdd831f9b12f948f6093b411e965222e4"
+    },
+    {
+      "runId": "run_33c9dc06866c466a89e85096",
+      "variant": "zero_lr",
+      "trainingSeed": 19,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:48:08.302Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.7519192695617676,
+      "checkpointSha256": "af8533e83def71063f119789ef26a6630934cf51eee0e26cd33c959bdf327b65",
+      "evaluationSha256": "dded6e631397e42a2933d9a9db4e99c08f29135ae00484c129ca36e2ed7a2196"
+    },
+    {
+      "runId": "run_9f8fd980bd944277926564a8",
+      "variant": "trained",
+      "trainingSeed": 19,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:48:16.828Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.7292747497558594,
+      "checkpointSha256": "1ef5e68ca3f4bdefafd14dcb9f5711880bb485dc89a8b3fdd0f05012724a0c76",
+      "evaluationSha256": "b259c9b0494e9af5e780bf061b3218cacd16eba855822c7a535ac4499c65965f"
+    },
+    {
+      "runId": "run_9249fb9f04f644a6bd087965",
+      "variant": "zero_lr",
+      "trainingSeed": 41,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:48:25.383Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.7519192695617676,
+      "checkpointSha256": "24bce62bb719fb033f27beda7ed0ca433bacf96c59e75f24cb596a36d1011376",
+      "evaluationSha256": "dded6e631397e42a2933d9a9db4e99c08f29135ae00484c129ca36e2ed7a2196"
+    },
+    {
+      "runId": "run_8fb0a28920684cd79b82b4d7",
+      "variant": "trained",
+      "trainingSeed": 41,
+      "dataSeedApplied": 19,
+      "lifecycle": ["preparing", "running", "completed"],
+      "completedAt": "2026-09-05T20:48:34.633Z",
+      "device": "cuda",
+      "meanEvaluationLoss": 3.73180890083313,
+      "checkpointSha256": "43f23345a0051e857650e107e50711bd2db620ba23048e3f7156d24de19f66b0",
+      "evaluationSha256": "6466bba41566213b8af2932a820f8d4042392fa74d32fec86da72063be478831"
+    }
+  ],
+  "resumeEvidence": {
+    "parentRunId": "run_e63ca1731cb649a2961861a8",
+    "childRunId": "run_8acb2f7c98f446c692d28a1f",
+    "sourceStep": 2,
+    "finalStep": 6,
+    "dataSeedApplied": 19,
+    "seedSetPreserved": true,
+    "evaluationProtocolPreserved": true,
+    "lifecycle": ["preparing", "running", "completed"],
+    "weightComparison": {
+      "maxAbsoluteDifference": 0,
+      "tensorCount": 4,
+      "tolerance": 1e-6
+    }
+  },
+  "recordId": "production-sft-result",
+  "independentVerification": {
+    "files": 245,
+    "guarantees": {
+      "environment": "recorded-evidence-only; inspect omissions and platform requirements",
+      "integrity": "all-included-files-verified",
+      "numericalReproducibility": "not-established-by-export",
+      "scientificConclusion": "requires independent held-out evaluation and adequate replication",
+      "trainerResume": "requires an explicitly included complete compatible checkpoint"
+    },
+    "indexSha256": "599605e1ae78afd508697e9fda8a507dd3867111f85ca55f05530d77b6aa8805",
+    "omissions": 26,
+    "verified": true
+  },
+  "independentReload": {
+    "reloads": [
+      {
+        "runId": "run_33c9dc06866c466a89e85096",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_5f366b374c5f42f692b898ed",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_8acb2f7c98f446c692d28a1f",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_8fb0a28920684cd79b82b4d7",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_9249fb9f04f644a6bd087965",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_9f8fd980bd944277926564a8",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      },
+      {
+        "runId": "run_e63ca1731cb649a2961861a8",
+        "finiteLogits": true,
+        "logitShape": [1, 8, 42]
+      }
+    ],
+    "baseModelRemappedToBundle": true,
+    "hubOffline": true,
+    "localFilesOnly": true
+  },
+  "limitations": [
+    "Tiny synthetic fixture: three training seeds, two held-out rows, one GPU; no generalization claim",
+    "Retrospective research record; evaluation and generation seeds are inapplicable to deterministic loss",
+    "Uses Manager.start with terminal subscriptions; persists study membership after verified runs, without exercising createStudy scheduling",
+    "Model and complete project Git archive are supplemental verified artifacts registered by the harness; worker emits checkpoints, adapters, summaries and evaluations",
+    "uv lock check and pre-launch setup snapshots use the existing installed TRL environment; no independent environment rebuild",
+    "Seven bundled adapters independently reload on CPU with local_files_only and remapped base-model paths; no UI check here",
+    "Resume from a completed parent's intermediate step-2 checkpoint matches continuous final adapter tensors on this host; cancellation and cross-hardware equality are outside this script"
+  ]
+}

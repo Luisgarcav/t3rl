@@ -3,6 +3,7 @@ import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import type { RlEvaluationProtocol } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -79,16 +80,42 @@ const configLayer = Layer.effect(
   }),
 );
 
+const experimentLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3rl-checkpoint-project-" });
+    const dataset = `${directory}/dataset.json`;
+    yield* fs.writeFileString(dataset, '[{"sampleId":"fixture","text":"checkpoint fixture"}]\n');
+    const identity = yield* ArtifactIdentity.computeArtifactIdentity({
+      artifactPath: dataset,
+      maxBytes: 1024,
+    });
+    const projectDefinition: Experiments.ResolvedExperimentDefinition = {
+      ...definition,
+      config: { ...definition.config, projectDatasetPath: dataset },
+      projectInputs: [
+        {
+          role: "dataset",
+          sourcePath: dataset,
+          snapshotName: "dataset.json",
+          sha256: identity.sha256,
+          bytes: identity.bytes,
+        },
+      ],
+    };
+    return Experiments.layerFromRecord({
+      [definition.experimentId]: projectDefinition,
+      [cancellationDefinition.experimentId]: cancellationDefinition,
+      "fake-checkpoint-no-inputs": { ...definition, experimentId: "fake-checkpoint-no-inputs" },
+    });
+  }),
+);
+
 const smokeLayer = RlManager.RlManagerLive.pipe(
   Layer.provide(WorkerSpawnerLive),
   Layer.provide(CapabilitiesLive),
   Layer.provide(ProcessRunner.layer),
-  Layer.provide(
-    Experiments.layerFromRecord({
-      [definition.experimentId]: definition,
-      [cancellationDefinition.experimentId]: cancellationDefinition,
-    }),
-  ),
+  Layer.provide(experimentLayer),
   Layer.provide(
     SourceEvidence.layerFromResolver(() =>
       Effect.succeed({ workspaceRoot: repoRoot, sourceRevision: "fixture", sourceDirty: false }),
@@ -124,10 +151,23 @@ describe("protocol-v2 checkpoint worker smoke", () => {
         const manager = yield* RlManager.RlManager;
         const config = yield* ServerConfig.ServerConfig;
         const fs = yield* FileSystem.FileSystem;
+        const seeds = { training: 7, data: 7, evaluationSample: 7, generation: 7 };
+        const evaluationProtocol: RlEvaluationProtocol = {
+          version: 1,
+          protocolSha256: "a".repeat(64),
+          datasetFingerprint: "checkpoint-fixture-v1",
+          split: "test",
+          sampleIds: ["held-out"],
+          generationSeedPolicy: "fixed-per-sample",
+          decoding: {},
+          verifierSha256: "b".repeat(64),
+        };
         const parent = yield* manager.start({
           projectId: "proj_checkpoint_smoke",
           experimentId: definition.experimentId,
           seed: 7,
+          seeds,
+          evaluationProtocol,
         });
         assert.strictEqual(yield* awaitTerminal(manager, parent.runId), "completed");
         const parentDetail = yield* manager.get({ runId: parent.runId });
@@ -176,6 +216,17 @@ describe("protocol-v2 checkpoint worker smoke", () => {
           }),
         );
         assert.strictEqual(adapterAsResume.code, "ResumeIncompatible");
+        const droppedInputs = yield* manager
+          .resume({
+            projectId: "proj_checkpoint_smoke",
+            parentRunId: parent.runId,
+            sourceArtifactId: checkpoint.artifactId,
+            requestId: "removed_inputs_fixture_01",
+            targetExperimentId: "fake-checkpoint-no-inputs",
+          })
+          .pipe(Effect.flip);
+        assert.strictEqual(droppedInputs.code, "ResumeIncompatible");
+        assert.include(droppedInputs.detail, "project input snapshots changed");
 
         const parentRoot = Artifacts.runDirectory({
           rlRunsDir: config.rlRunsDir,
@@ -197,6 +248,11 @@ describe("protocol-v2 checkpoint worker smoke", () => {
         });
         assert.strictEqual(yield* awaitTerminal(manager, child.runId), "completed");
         const childDetail = yield* manager.get({ runId: child.runId });
+        assert.deepStrictEqual(childDetail.manifest?.seeds, seeds);
+        assert.deepStrictEqual(
+          childDetail.manifest?.effectiveConfig.evaluationProtocol,
+          evaluationProtocol,
+        );
         const childAdapter = childDetail.artifacts.find(
           (artifact) => artifact.evidence?._tag === "Adapter",
         );

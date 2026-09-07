@@ -90,6 +90,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as RlManager from "./rl/Manager.ts";
+import * as RlEvidence from "./rl/EvidenceBundle.ts";
 import * as RlRunStore from "./rl/RunStore.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -1866,7 +1867,7 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
-              if (input.resource._tag === "attachment") {
+              if (input.resource._tag === "attachment" || input.resource._tag === "rl-evidence") {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
               if (input.resource._tag === "rl-artifact") {
@@ -2110,6 +2111,18 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.rlValidateExperiment]: (input) =>
           observeRpcEffect(WS_METHODS.rlValidateExperiment, rlManager.validateExperiment(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlExportEvidence]: (input) =>
+          observeRpcEffect(WS_METHODS.rlExportEvidence, RlEvidence.exportEvidence(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlRecordResearch]: (input) =>
+          observeRpcEffect(WS_METHODS.rlRecordResearch, RlEvidence.recordResearch(input), {
+            "rpc.aggregate": "rl",
+          }),
+        [WS_METHODS.rlGetResearchRecord]: (input) =>
+          observeRpcEffect(WS_METHODS.rlGetResearchRecord, RlEvidence.getResearchRecord(input), {
             "rpc.aggregate": "rl",
           }),
         [WS_METHODS.rlSubscribeRun]: (input) =>

@@ -190,6 +190,17 @@ it.effect("scopes RL tools to the current thread project and starts runs in that
       }),
     ]);
 
+    const foreignExport = yield* call("rl_export_evidence", {
+      runIds: ["run-foreign"],
+      study: null,
+      recordIds: [],
+      additionalArtifacts: [],
+    });
+    expect(foreignExport.isError).toBe(true);
+    expect(foreignExport.content).toEqual([
+      expect.objectContaining({ text: expect.stringContaining("selected project") }),
+    ]);
+
     const started = yield* call("rl_start_run", {
       experimentId: "cartpole-ppo",
       seed: 7,

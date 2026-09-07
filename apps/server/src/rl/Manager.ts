@@ -18,6 +18,7 @@ import {
   type RlArtifactMetadata,
   type RlCheckpointArtifactEvidence,
   type RlErrorCode,
+  RlEvaluationProtocol,
   type RlLineageEdge,
   type RlLineageRelation,
   type RlMetricBatch,
@@ -49,6 +50,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
@@ -59,12 +61,14 @@ import * as ArtifactIdentity from "./ArtifactIdentity.ts";
 import * as Artifacts from "./Artifacts.ts";
 import { Capabilities } from "./Capabilities.ts";
 import { Experiments } from "./Experiments.ts";
+import { snapshotEnvironment } from "./EnvironmentEvidence.ts";
 import * as Lifecycle from "./Lifecycle.ts";
 import { RunStore } from "./RunStore.ts";
 import { SourceEvidence } from "./SourceEvidence.ts";
 import { WorkerSpawner, type WorkerProcess } from "./WorkerSpawner.ts";
 import * as WorkerProtocol from "./WorkerProtocol.ts";
-import { comparePairedStudy } from "./StudyStatistics.ts";
+import { comparePairedStudyEffect } from "./StudyStatistics.ts";
+import { collectStudyObservation } from "./StudyEvidence.ts";
 
 /** How long a cancelled worker gets to exit before SIGKILL. */
 export const CANCEL_GRACE = Duration.seconds(5);
@@ -94,6 +98,7 @@ export interface StartRunInput {
   readonly seed: number;
   readonly requestId?: string | undefined;
   readonly seeds?: RlResolvedManifest["seeds"] | undefined;
+  readonly evaluationProtocol?: RlEvaluationProtocol | undefined;
 }
 
 export interface ContinueRunInput {
@@ -105,12 +110,15 @@ export interface ContinueRunInput {
 }
 
 type Subscriber = (event: RlSubscriptionEvent) => void;
+const decodeEvaluationProtocol = Schema.decodeUnknownEffect(RlEvaluationProtocol);
 
 interface ContinuationSource {
   readonly relation: RlLineageRelation;
   readonly parentRunId: string;
   readonly experimentId: string;
   readonly seed: number;
+  readonly seeds: RlResolvedManifest["seeds"];
+  readonly evaluationProtocol: RlEvaluationProtocol | undefined;
   readonly sourceArtifactId: string;
   readonly sourceArtifactSha256: string;
   readonly sourceStep: number;
@@ -1107,7 +1115,30 @@ const makeManager = Effect.gen(function* () {
         return yield* continuationFailure("experiment is not configured for protocol-v2 resume");
       }
       if (relation === "resume") {
+        const resolvedInputs = (definition.projectInputs ?? []).map((entry) => ({
+          role: entry.role,
+          logicalName: entry.snapshotName,
+          sha256: entry.sha256,
+          bytes: entry.bytes,
+        }));
+        if (
+          canonicalJson(parent.manifest.effectiveConfig.resolvedProjectInputs ?? []) !==
+          canonicalJson(resolvedInputs)
+        ) {
+          return yield* continuationFailure("project input snapshots changed since the parent run");
+        }
         for (const [key, value] of Object.entries(definition.config)) {
+          const inputRole =
+            key === "projectDatasetPath"
+              ? "dataset"
+              : key === "projectVerifierPath"
+                ? "verifier"
+                : null;
+          if (
+            inputRole !== null &&
+            definition.projectInputs?.some((entry) => entry.role === inputRole)
+          )
+            continue;
           if (canonicalJson(parent.manifest.effectiveConfig[key]) !== canonicalJson(value)) {
             return yield* continuationFailure(`experiment configuration changed at ${key}`);
           }
@@ -1173,6 +1204,15 @@ const makeManager = Effect.gen(function* () {
         parentRunId: input.parentRunId,
         experimentId: definition.experimentId,
         seed: parent.manifest.seed,
+        seeds: parent.manifest.seeds,
+        evaluationProtocol:
+          relation === "resume" && parent.manifest.effectiveConfig.evaluationProtocol !== undefined
+            ? yield* decodeEvaluationProtocol(
+                parent.manifest.effectiveConfig.evaluationProtocol,
+              ).pipe(
+                Effect.mapError(() => continuationFailure("parent evaluation protocol is invalid")),
+              )
+            : undefined,
         sourceArtifactId: input.sourceArtifactId,
         sourceArtifactSha256: source.metadata.sha256,
         sourceStep: evidence.globalStep,
@@ -1287,6 +1327,24 @@ const makeManager = Effect.gen(function* () {
       const definition = yield* experiments
         .resolve({ experimentId: input.experimentId, workspaceRoot: source.workspaceRoot })
         .pipe(Effect.catchTag("RlRunStartError", failStart));
+      if (input.seeds !== undefined) {
+        const independentSeedsSupported =
+          (definition.runnerId === "trl" || definition.runnerId === "axolotl") &&
+          (definition.method === "sft" || definition.method === "dpo");
+        if (
+          input.seeds.training !== input.seed ||
+          (!independentSeedsSupported &&
+            Object.values(input.seeds).some((seed) => seed !== input.seed))
+        ) {
+          return yield* failStart(
+            new RlRunStartError({
+              code: "InvalidExperiment",
+              detail:
+                "This runner cannot apply the declared independent seed set. Match all seeds to the training seed or use an SFT/DPO runner that supports independent data seeds.",
+            }),
+          );
+        }
+      }
       const protocolVersion = definition.protocolVersion ?? 1;
       record.expectedProtocolVersion = protocolVersion;
 
@@ -1412,6 +1470,14 @@ const makeManager = Effect.gen(function* () {
         }
       }
 
+      const environmentLock = yield* snapshotEnvironment(
+        resolvedRunner.environmentLock,
+        runRoot,
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.catchTag("RlRunStartError", failStart),
+      );
       record.manifestBase = {
         experimentId: definition.experimentId,
         runnerId: definition.runnerId,
@@ -1419,13 +1485,18 @@ const makeManager = Effect.gen(function* () {
         protocolVersion,
         seed: input.seed,
         ...(input.seeds === undefined ? {} : { seeds: input.seeds }),
-        effectiveConfig,
+        effectiveConfig: {
+          ...effectiveConfig,
+          ...(input.evaluationProtocol === undefined
+            ? {}
+            : { evaluationProtocol: input.evaluationProtocol }),
+        },
         sourceRevision: source.sourceRevision,
         sourceDirty: source.sourceDirty,
         pythonExecutable: resolvedRunner.executable,
         pythonVersion: resolvedRunner.version,
         environmentFingerprint: resolvedRunner.environmentFingerprint,
-        environmentLock: resolvedRunner.environmentLock,
+        environmentLock,
         instrumentationLevel: definition.instrumentationLevel,
         hardwareSummary: `${hostPlatform}/${hostArchitecture}`,
         ...(lineage === undefined ? {} : { lineage }),
@@ -1464,6 +1535,18 @@ const makeManager = Effect.gen(function* () {
             PYTHONHASHSEED: String(input.seed),
             T3RL_ENVIRONMENT_FINGERPRINT: resolvedRunner.environmentFingerprint,
             T3RL_ENVIRONMENT_LOCK_SHA256: resolvedRunner.environmentLock?.lockfileSha256 ?? "",
+            ...(input.seeds === undefined
+              ? {}
+              : {
+                  // @effect-diagnostics-next-line preferSchemaOverJson:off - schema-validated study seeds.
+                  T3RL_SEED_SET_JSON: JSON.stringify(input.seeds),
+                }),
+            ...(input.evaluationProtocol === undefined
+              ? {}
+              : {
+                  // @effect-diagnostics-next-line preferSchemaOverJson:off - schema-validated study protocol.
+                  T3RL_EVALUATION_PROTOCOL_JSON: JSON.stringify(input.evaluationProtocol),
+                }),
           },
         })
         .pipe(
@@ -1525,6 +1608,10 @@ const makeManager = Effect.gen(function* () {
           projectId: input.projectId,
           experimentId: continuation.experimentId,
           seed: continuation.seed,
+          ...(continuation.seeds === undefined ? {} : { seeds: continuation.seeds }),
+          ...(continuation.evaluationProtocol === undefined
+            ? {}
+            : { evaluationProtocol: continuation.evaluationProtocol }),
           requestId: input.requestId,
         },
         continuation,
@@ -1697,6 +1784,12 @@ const makeManager = Effect.gen(function* () {
         });
       }
       const { protocolSha256, ...protocolBody } = input.definition.evaluationProtocol;
+      if (new Set(protocolBody.sampleIds).size !== protocolBody.sampleIds.length) {
+        return yield* new RlRunStartError({
+          code: "InvalidExperiment",
+          detail: "Evaluation protocol sample IDs must be unique.",
+        });
+      }
       const authoritativeProtocolSha256 = yield* sha256Text(canonicalJson(protocolBody));
       if (protocolSha256 !== authoritativeProtocolSha256) {
         return yield* new RlRunStartError({
@@ -1741,6 +1834,7 @@ const makeManager = Effect.gen(function* () {
                 experimentId: variant.experimentId,
                 seed: member.seeds.training,
                 seeds: member.seeds,
+                evaluationProtocol: input.definition.evaluationProtocol,
                 requestId: `${study.studyId}_${member.variantLabel}_${member.seeds.training}`.slice(
                   0,
                   64,
@@ -1821,50 +1915,71 @@ const makeManager = Effect.gen(function* () {
   const compareStudy: RlManagerShape["compareStudy"] = (input) =>
     Effect.gen(function* () {
       const study = yield* getStudy({ studyId: input.studyId });
-      const collect = (label: string) =>
-        Effect.forEach(
-          study.runs.filter((member) => member.variantLabel === label && member.runId !== null),
-          (member) =>
-            get({ runId: member.runId! }).pipe(
-              Effect.catchTag("RlRunNotFoundError", Effect.orDie),
-              Effect.map((detail) => {
-                const observation = detail.metrics
-                  .flatMap((batch) => {
-                    const value = batch.values[input.metricKey];
-                    return typeof value === "number" && Number.isFinite(value)
-                      ? [{ step: batch.step, value }]
-                      : [];
-                  })
-                  .toSorted((left, right) => left.step - right.step)
-                  .at(-1);
-                return observation === undefined
-                  ? null
-                  : { trainingSeed: member.seeds.training, value: observation.value };
-              }),
-            ),
-          { concurrency: 4 },
-        ).pipe(
-          Effect.map((values) =>
-            values.filter((value): value is NonNullable<typeof value> => value !== null),
-          ),
+      const { protocolSha256, ...protocolBody } = study.definition.evaluationProtocol;
+      const protocolMatches =
+        protocolSha256 === study.protocolSha256 &&
+        protocolSha256 === (yield* sha256Text(canonicalJson(protocolBody))) &&
+        new Set(protocolBody.sampleIds).size === protocolBody.sampleIds.length;
+      const validVariants =
+        input.baselineLabel !== input.candidateLabel &&
+        [input.baselineLabel, input.candidateLabel].every((label) =>
+          study.definition.variants.some((variant) => variant.label === label),
         );
-      const [baseline, candidate] = yield* Effect.all([
-        collect(input.baselineLabel),
-        collect(input.candidateLabel),
-      ]);
-      return comparePairedStudy({
+      const members = study.runs.filter(
+        (member) =>
+          member.variantLabel === input.baselineLabel ||
+          member.variantLabel === input.candidateLabel,
+      );
+      const collected = validVariants
+        ? yield* Effect.forEach(
+            members,
+            (member) =>
+              collectStudyObservation({
+                study,
+                member,
+                metricKey: input.metricKey,
+                rlRunsDir: config.rlRunsDir,
+              }).pipe(
+                Effect.provideService(RunStore, store),
+                Effect.provideService(FileSystem.FileSystem, fs),
+                Effect.provideService(Path.Path, path),
+                Effect.provideService(Crypto.Crypto, crypto),
+              ),
+            { concurrency: 4 },
+          )
+        : [];
+      const excludedRuns = collected.flatMap((entry) =>
+        entry._tag === "Excluded" ? [entry.excluded] : [],
+      );
+      const collect = (label: string) =>
+        collected.flatMap((entry, index) =>
+          entry._tag === "Observation" && members[index]?.variantLabel === label
+            ? [entry.observation]
+            : [],
+        );
+      const comparison = yield* comparePairedStudyEffect({
         studyId: study.studyId,
         protocolSha256: study.protocolSha256,
         baselineLabel: input.baselineLabel,
         candidateLabel: input.candidateLabel,
         metricKey: input.metricKey,
-        baseline,
-        candidate,
-        failedRuns: study.runs.filter((run) => run.state === "failed" || run.state === "cancelled")
-          .length,
+        baseline: collect(input.baselineLabel),
+        candidate: collect(input.candidateLabel),
+        failedRuns: excludedRuns.filter(
+          (run) =>
+            run.reason === "failed" || run.reason === "cancelled" || run.reason === "interrupted",
+        ).length,
+        excludedRuns,
+        expectedSeeds: study.definition.seeds.map((seeds) => seeds.training),
+        expectedSampleIds: study.definition.evaluationProtocol.sampleIds,
+        generationSeedPolicy: study.definition.evaluationProtocol.generationSeedPolicy,
         estimator: input.estimator,
-        compatibleProtocol: true,
+        compatibleProtocol:
+          protocolMatches && !excludedRuns.some((run) => run.reason === "incompatible-protocol"),
       });
+      return validVariants
+        ? comparison
+        : { ...comparison, conclusion: "invalid-variants" as const };
     });
 
   const validateExperiment: RlManagerShape["validateExperiment"] = (input) =>

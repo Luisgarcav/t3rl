@@ -1,4 +1,5 @@
 import {
+  AssetResource,
   RlArtifactMetadata,
   RlArtifactPage,
   RlCapabilityReport,
@@ -14,6 +15,10 @@ import {
   RlStudyDefinition,
   RlStudyEstimator,
   RL_MAX_ARTIFACT_PAGE_SIZE,
+  RlEvidenceExport,
+  RlExportEvidenceInput,
+  RlResearchRecord,
+  RlResearchRecordInput,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -451,4 +456,76 @@ export const RlToolkit = Toolkit.make(
   RlGetStudyTool,
   RlCompareStudyTool,
   RlValidateExperimentTool,
+  Tool.make("rl_export_evidence", {
+    description:
+      "Export selected terminal runs and optional study comparison/research records into a portable archive with server-verified hashes, explicit omissions, and an independent verifier. Project scope comes from this thread. archivePath is the retained file on this environment for verification or copying; clients can request a signed asset URL for the returned resource.",
+    parameters: Schema.Struct({
+      runIds: RlExportEvidenceInput.fields.runIds.annotate({
+        description: "One to twelve distinct terminal runs in this project.",
+      }),
+      study: RlExportEvidenceInput.fields.study.annotate({
+        description: "Optional study and exact comparison estimator; null for a run bundle.",
+      }),
+      recordIds: RlExportEvidenceInput.fields.recordIds.annotate({
+        description: "Research record IDs to include; use an empty array when none are needed.",
+      }),
+      additionalArtifacts: RlExportEvidenceInput.fields.additionalArtifacts.annotate({
+        description:
+          "Explicit extra artifact references, such as checkpoints. Default evaluation, summary, configuration, dataset, source and adapter artifacts are included automatically.",
+      }),
+    }),
+    success: Schema.Struct({
+      ...ProjectContext.fields,
+      export: RlEvidenceExport,
+      archivePath: Schema.String.check(Schema.isMaxLength(4096)),
+      resource: AssetResource,
+    }),
+    failure: RlAgentToolError,
+    dependencies,
+  })
+    .annotate(Tool.Title, "Export RL evidence")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false)
+    .annotate(Tool.Idempotent, true)
+    .annotate(Tool.OpenWorld, false),
+  Tool.make("rl_record_research", {
+    description:
+      "Write one immutable project research record linking a falsifiable hypothesis, verified run/artifact evidence, proposed change, outcome and limitations. Reuse requestId only for retries of the same content. Authorization references are recorded attestations and never grant permission to train.",
+    parameters: Schema.Struct({
+      record: Schema.Struct({
+        requestId: RlResearchRecordInput.fields.requestId,
+        parentRecordId: RlResearchRecordInput.fields.parentRecordId,
+        hypothesis: RlResearchRecordInput.fields.hypothesis,
+        evidence: RlResearchRecordInput.fields.evidence,
+        proposedChange: RlResearchRecordInput.fields.proposedChange,
+        authorizationReference: RlResearchRecordInput.fields.authorizationReference,
+        outcome: RlResearchRecordInput.fields.outcome,
+        interpretation: RlResearchRecordInput.fields.interpretation,
+        limitations: RlResearchRecordInput.fields.limitations,
+      }).annotate({
+        description:
+          "Research assertions and exact evidence references. Parent links connect a later outcome to an earlier proposal; timestamps identify retrospective records.",
+      }),
+    }),
+    success: Schema.Struct({ ...ProjectContext.fields, record: RlResearchRecord }),
+    failure: RlAgentToolError,
+    dependencies,
+  })
+    .annotate(Tool.Title, "Record RL investigation")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false)
+    .annotate(Tool.Idempotent, true)
+    .annotate(Tool.OpenWorld, false),
+  readonlyTool(
+    Tool.make("rl_get_research_record", {
+      description:
+        "Read and verify an immutable research record in the current project, including its hypothesis, hashed evidence references, parent record, change, interpretation and limitations.",
+      parameters: Schema.Struct({
+        recordId: IdentifierParameter("Research record ID returned by rl_record_research."),
+      }),
+      success: Schema.Struct({ ...ProjectContext.fields, record: RlResearchRecord }),
+      failure: RlAgentToolError,
+      dependencies,
+    }).annotate(Tool.Title, "Inspect RL investigation"),
+  ),
 );

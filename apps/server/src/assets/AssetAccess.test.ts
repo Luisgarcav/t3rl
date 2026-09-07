@@ -15,6 +15,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { evidenceExportPath } from "../rl/EvidencePaths.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
 
 const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -31,6 +32,47 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect(
+    "serves an evidence export by signed identity and refuses replacement by a symlink",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig;
+        const resource = {
+          _tag: "rl-evidence" as const,
+          projectId: "project-export",
+          exportId: `export_${"a".repeat(48)}`,
+        };
+        const archive = evidenceExportPath({ rlRunsDir: config.rlRunsDir, ...resource })!;
+        yield* fs.makeDirectory(path.dirname(archive), { recursive: true });
+        yield* fs.writeFileString(archive, "archive");
+        const url = yield* issueAssetUrl({ resource });
+        const token = url.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length).split("/")[0]!;
+        expect(yield* resolveAsset(token, `${resource.exportId}.tar`)).toEqual({
+          kind: "file",
+          path: yield* fs.realPath(archive),
+        });
+        const aliasRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-asset-parent-alias-" });
+        const alias = path.join(aliasRoot, "state");
+        yield* fs.symlink(path.dirname(config.rlRunsDir), alias);
+        const aliasConfig = {
+          ...config,
+          rlRunsDir: path.join(alias, path.basename(config.rlRunsDir)),
+        };
+        expect(
+          yield* resolveAsset(token, `${resource.exportId}.tar`).pipe(
+            Effect.provideService(ServerConfig.ServerConfig, aliasConfig),
+          ),
+        ).toEqual({ kind: "file", path: yield* fs.realPath(archive) });
+        expect(yield* resolveAsset(`${token}invalid`, `${resource.exportId}.tar`)).toBeNull();
+        const outside = yield* fs.makeTempFileScoped({ prefix: "outside-export-" });
+        yield* fs.writeFileString(outside, "outside");
+        yield* fs.remove(archive);
+        yield* fs.symlink(outside, archive);
+        expect(yield* resolveAsset(token, `${resource.exportId}.tar`)).toBeNull();
+      }).pipe(Effect.provide(testLayer)),
+  );
   it.effect("issues workspace URLs that resolve the entry file and sibling assets", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -1,9 +1,10 @@
 # T3RL research lab architecture
 
-> For maintainers. The Phase 1 backend and initial web/desktop client are implemented; later
-> research phases remain incremental work.
+> For maintainers. The run kernel, initial web/desktop client, and post-training Milestones 1–5
+> have implementation. Real-framework and integrated release verification are separate gates.
 
-Status: Phase 1 backend and initial RL Lab UI implemented; validation and later research phases remain
+Status: Local post-training evidence delivery and validation are active; distributed execution,
+autonomous curricula, advanced storage policy, and mobile RL remain later increments
 
 Delivery plan: [T3RL phased development plan](./rl-lab-roadmap.md)
 
@@ -98,6 +99,30 @@ algorithm, environment, effective hyperparameters, source revision, dirty-worktr
 environment, runner version, and relevant hardware. A run never silently changes when an experiment
 definition is edited later.
 
+The term describes five distinct claims: artifact integrity, environment reconstruction,
+trainer-state resume, numerical agreement within a recorded platform/tolerance, and empirical
+repeatability across independent seeds on a fixed holdout. A hash verifies bytes; a lockfile records
+dependencies; neither demonstrates that a training conclusion repeats. Visible records and exports
+must identify which claim was checked and retain the command, scope, result, and unmet requirements.
+The [post-training guarantee definitions](../superpowers/plans/2026-09-04-serious-llm-post-training.md#reproducibility-guarantees)
+and [delivery-status table](../superpowers/plans/2026-09-04-serious-llm-post-training.md#delivery-status-2026-09-05)
+separate implementation, real-framework verification, and completed release gates.
+
+The [recorded framework checks](../benchmarks/rl-framework-validation/README.md) exercise real TRL
+SFT/DPO on CPU/CUDA, native GRPO on CUDA, and Axolotl SFT/DPO on CUDA, including checkpoint
+interruption/resume and independent adapter loading. These tests establish the named lifecycle
+and same-device numerical checks on one host; the plan keeps integrated client and independent
+training-reproduction gates open.
+
+The [production-service reference](../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+also verifies project-defined CUDA SFT launch through the actual capability, source, worker, manager,
+and SQLite services. Six runs contribute three seed pairs to public comparison; a seventh resumes
+from checkpoint step 2 through step 6 with unchanged seeds/protocol and matching final adapter
+weights. Its bundle verifies and all seven adapters reload offline after deleting the temporary
+project/database. Study membership is recorded afterward, so real-GPU `createStudy` scheduling is
+outside this proof. The [Release A instructions](../superpowers/plans/2026-09-04-serious-llm-post-training.md#release-a-trustworthy-local-post-training)
+document the opt-in command, retrospective record, and small-fixture limits.
+
 ### The UI explains state; it does not invent it
 
 Clients render the server projection and subscription state. They do not infer that a run completed
@@ -145,6 +170,21 @@ manifest, lifecycle, metric series, logs, and zero or more artifacts.
 A policy assessment performed separately from training collection. Evaluation metrics and recordings
 are labeled as evaluation output so they are not confused with training rewards.
 
+### Study and research record
+
+A study declares comparable variants, independent seed roles, a bounded run schedule, and one
+evaluation protocol. Authoritative comparison is performed by the server using the retained
+evidence required by the selected statistical unit. Run-level scalars cannot be presented as paired
+sample-level evidence. The response exposes exclusions, unmatched samples, and the reason a
+comparison cannot yield an interval.
+
+A research record preserves one hypothesis-to-outcome account: cited run/artifact/protocol evidence,
+the proposed change and recorded authorization, the source/definition change, resulting runs, outcome,
+and limitations. Records are immutable and project-scoped; a correction links to the earlier record.
+An authorization reference records an attestation and never grants compute permission. The minimum
+record belongs to local evidence delivery; automatic multi-turn research and accumulated budgets
+remain a later controller concern.
+
 ### Artifact
 
 A file produced by a run, such as a checkpoint, resolved manifest, log, evaluation video, or summary.
@@ -155,7 +195,8 @@ but cannot become continuation sources.
 
 An adapter and an exact checkpoint are different artifact roles. A PEFT adapter is portable learned
 state tied to a pinned base model. A resumable checkpoint additionally proves the trainer, optimizer,
-scheduler, RNG, dataset cursor, and applicable gradient-scaler state needed for exact continuation.
+scheduler, RNG, dataset cursor, and applicable gradient-scaler state needed for trainer continuation.
+Numerical equivalence is verified separately against an uninterrupted run within a declared tolerance.
 
 ### Runner
 
@@ -203,7 +244,7 @@ belong in `packages/client-runtime`. Visual state stays in the relevant client.
 
 The implemented RPC surface is intentionally small:
 
-- `rl.capabilities`: report available runners, actionable setup failures, and bundled experiments.
+- `rl.capabilities`: report available runners/methods, actionable setup failures, and the experiment catalog.
 - `rl.listRuns`: return durable run summaries for one project.
 - `rl.getRun`: return the manifest, lineage, bounded metrics, and artifact metadata for one run.
 - `rl.listArtifacts`: page through checkpoint-heavy artifact inventories.
@@ -211,13 +252,18 @@ The implemented RPC surface is intentionally small:
 - `rl.resumeRun`: create a child from a complete exact checkpoint after compatibility validation.
 - `rl.warmStartRun`: create a child from a verified PEFT adapter without claiming exact resume.
 - `rl.cancelRun`: request cancellation of a non-terminal run.
+- `rl.validateExperiment`: resolve and validate a project definition without training or installation.
+- `rl.createStudy`, `rl.getStudy`, and `rl.compareStudy`: schedule and inspect bounded multi-seed work.
 - `rl.subscribeRun`: send a durable snapshot followed by live lifecycle, manifest, metric, and
   artifact events.
 
 Artifact bytes use the existing signed asset URL boundary.
 
-Names may change to match the concrete Effect RPC grouping, but the capability boundaries should not
-expand during the first slice.
+The Release A evidence increment adds `rl.recordResearch`, `rl.getResearchRecord`, and
+`rl.exportEvidence`. The first two write/read immutable project-scoped research records; export
+selects terminal runs and optional study/comparison and records, then publishes a downloadable
+archive outside the source runs. Agent utilities use the same services and authorization. These
+operations do not start training or change an approved compute budget.
 
 Run intent and lifecycle transitions use an RL-owned in-place projection rather than the
 orchestration event log. Metric points must not become orchestration events. A compact run
@@ -232,8 +278,10 @@ python/t3rl_worker/experiments/
   cartpole-ppo.json
 ```
 
-Project-owned definitions are a later extension. When added, UI edits must remain ordinary,
-reviewable workspace changes.
+Project-owned definitions now live in `.t3rl/experiments/*.json` with the `project__` namespace;
+canonical bundled IDs use `bundled__`. The server validates definitions without launching, resolves
+project-relative datasets and verifiers, and copies hashed immutable inputs before worker start.
+UI or agent edits remain ordinary, reviewable workspace changes.
 
 ### Run artifacts
 
@@ -254,7 +302,8 @@ Generated artifacts default to environment-local T3 state rather than the Git wo
 ```
 
 This avoids adding large binary output to Git and prevents run output from contaminating thread
-checkpoints. Exporting selected artifacts into the workspace is an explicit future action.
+checkpoints. Explicit evidence export writes under T3 home outside source run directories, so
+exporting an immutable parent does not change its bytes.
 
 The immutable manifest contains:
 
@@ -272,6 +321,21 @@ Retained dirty patches and exported source snapshots remain later research-evide
 
 Secrets and environment-variable values are excluded. The manifest may record the names of declared
 inputs, but never credentials or raw tokens.
+
+### Minimum independent evidence export
+
+Release A exports a portable archive with a versioned index, selected artifact bytes, per-file
+SHA-256 and byte counts, manifests, lineage, available definition/source/lock evidence, evaluation
+protocol and samples, comparison settings/results, and selected research records. Omitted model,
+checkpoint, lock, or other external inputs are explicit inventory entries with their available
+identity. Large archive bytes use signed asset delivery rather than a WebSocket response.
+
+The archive includes a standard-library Python verifier that can inspect it without extraction,
+access to the original database, or application credentials. Verification detects changed/missing
+bytes and reports the scope of included evidence. It does not claim environment reconstruction,
+trainer resume, numerical agreement, or empirical repeatability without separate recorded proof.
+Advanced streamed archival policies, quotas, trash/restore, and purge reuse this evidence format in
+the later retention milestone.
 
 ## Worker protocol
 
@@ -325,7 +389,8 @@ For the first slice:
 - retain raw episode summaries on disk, not individual environment steps;
 - bound each batch by point count and encoded byte size;
 - downsample historical series before returning them to a chart;
-- coalesce server-side metric bursts independently of subscriber count;
+- coalesce live transport publications independently of subscriber count while preserving every
+  distinct semantic training step in durable evidence;
 - record evaluation video after a configured interval or at completion, not during every training
   step.
 
@@ -442,7 +507,9 @@ Cursor, Grok, and OpenCode. It allows an agent to:
 
 The concrete tools are `rl_capabilities`, `rl_list_runs`, `rl_get_run`, `rl_list_artifacts`,
 `rl_query_metrics`, `rl_compare_runs`, `rl_read_artifact`, `rl_start_run`, `rl_resume_run`,
-`rl_warm_start_run`, and `rl_cancel_run`. The MCP credential derives the project from its thread;
+`rl_warm_start_run`, `rl_cancel_run`, `rl_validate_experiment`, `rl_create_study`, `rl_get_study`, and
+`rl_compare_study`. The Release A evidence increment adds `rl_record_research`,
+`rl_get_research_record`, and `rl_export_evidence`. The MCP credential derives the project from its thread;
 callers cannot supply a different project ID, and foreign run IDs are reported as missing. Metric
 queries, summaries, comparisons, artifact pages, and textual artifact reads are bounded. Binary
 models are never copied into model context.
@@ -479,9 +546,9 @@ summaries with non-finite counts, and artifact identities. Project-authored evid
 untrusted data in the prepared prompt. The prepared first turn must stop before edits or training and
 request explicit approval.
 
-This is an assisted single-iteration seam, not the Phase 2B autonomous controller. Server-enforced
-multi-iteration budgets, durable hypothesis-to-outcome records, and automatic authorized run
-execution remain Phase 2B work.
+The minimum durable hypothesis-to-outcome record and independent evidence export belong to Phase
+2A / Release A and can be used without an autonomous controller. Server-enforced multi-iteration
+budgets and automatic authorized run execution remain Phase 2B work and must reuse the same record.
 
 ## Security and permissions
 
@@ -537,8 +604,15 @@ server machine.
 ## Next phase: open-ended learning research
 
 After the first vertical slice validates execution, persistence, telemetry, and artifacts, the next
-phase shifts the lab from running isolated benchmarks to studying agents that continuously acquire
-capabilities from experience.
+delivery proves a useful local investigation: a project dataset, one GPU with a real TRL trainer,
+baseline/candidate/ablation, independent training seeds and final holdout, checkpoint/resume, a cited
+research record, export, and second-person reproduction. Negative, null, failed, and inconclusive
+outcomes remain useful when their evidence and limits are inspectable. The detailed
+[reference-case gate](../superpowers/plans/2026-09-04-serious-llm-post-training.md#immediate-delivery-slice-one-local-reference-investigation)
+is required before adding autonomous curricula or expanding algorithms and distributed backends.
+
+Once a named research question needs sequential experience, the next phase studies agents that
+continuously acquire capabilities from it.
 
 The goal is a closed research loop in which T3RL can propose tasks, run controlled experiments,
 measure what an agent learned, and use that evidence to design the next investigation:
@@ -695,33 +769,36 @@ and logs.
 The largest project risk is attempting the open-ended research vision before proving the execution
 boundary.
 
-- The first product proof remains one PPO `CartPole-v1` run on CPU.
+- The first execution-boundary proof remains one PPO `CartPole-v1` run on CPU. The next useful
+  post-training proof is the complete single-GPU investigation and independently verifiable evidence.
 - New algorithms, distributed scheduling, self-play, automatic curricula, and deep instrumentation do
   not enter that slice unless required to validate a foundational contract.
 - Each later capability must reuse or intentionally revise the manifest, lifecycle, artifact, and
   authorization models.
 - Prefer one complete, reconnectable, diagnosable run over a broad catalog of partially supported
   environments and algorithms.
+- Require a concrete experiment and a measured limitation before adding another algorithm, a
+  distributed strategy, a rollout sidecar, or autonomous curricula. Preserve their long-term scope
+  while letting demonstrated research need determine order.
 
 ## Implementation seams
 
-Expected ownership follows existing repository boundaries:
+Implementation ownership follows the existing repository boundaries:
 
 ```text
-packages/contracts/src/rl.ts           client/server schemas and RPC contracts
-packages/client-runtime/src/rl/        shared connection-backed run state
-apps/server/src/rl/                    lifecycle, supervision, persistence, artifacts
-apps/web/src/rl/                       desktop/web lab interface
-apps/mobile/src/features/rl/           initial read-only surface
-python/t3rl_worker/                    versioned worker and SB3 runner
-python/t3rl_worker/experiments/        version-controlled experiment definitions
+packages/contracts/src/rl.ts             run, study, evaluation and worker contracts
+packages/contracts/src/rlEvidence.ts     research record and evidence-export contracts
+packages/client-runtime/src/state/rl.ts  shared connection-backed run state and commands
+apps/server/src/rl/                      lifecycle, supervision, persistence and evidence
+apps/web/src/components/rl/              desktop/web lab interface
+apps/mobile/src/features/rl/             planned initial monitoring surface
+python/t3rl_worker/                      versioned workers and trainer adapters
+python/t3rl_worker/experiments/          bundled experiment definitions
 ```
 
-`apps/web/src` has no `features/` directory: it is organised flat with per-domain folders such as
-`terminal/` and `browser/`, and the lab surface should follow that shape.
-
-Exact filenames should follow adjacent code when implementation begins. The Python worker is not a
-Node workspace package and must not leak Python framework types into `packages/contracts`.
+The web implementation lives under `components/rl`; reusable connection state stays in the shared
+client runtime. The Python worker is not a Node workspace package and must not leak Python framework
+types into `packages/contracts`.
 
 ## Verification strategy
 
@@ -738,11 +815,18 @@ Node workspace package and must not leak Python framework types into `packages/c
 - Artifact tests cover authorization, media metadata, lexical traversal, and symlink escape attempts.
 - A standard-library protocol-v2 fixture proves uninterrupted/resumed equivalence, independent
   adapter loading, retention, graceful cancellation, lineage, and parent immutability without a GPU.
+- Separate real-framework tests execute optimizer steps, independent evaluation, native checkpoint
+  save/resume, and PEFT adapter load on the reported device. The fake fixture and a CUDA-availability
+  assertion cannot close this verification.
+- Public comparison fixtures prove that verified sample artifacts reach the estimator and that the
+  exported evidence independently reproduces its result; clients show its effective unit/conclusion.
+- Independent bundle verification detects missing or changed bytes without the source database;
+  environment reconstruction and second-person training reproduction have separate recorded results.
 - Client tests render empty, unavailable, preparing, running, failed, cancelled, and completed states.
 
 ## Later milestones
 
-After the open-ended learning phase is measured and stable:
+After the local evidence workflow is measured and stable, expand as a reference investigation needs:
 
 1. richer statistical analysis across experiment families and long-running curricula;
 2. checkpoint branching and counterfactual experiment comparison;
@@ -774,8 +858,9 @@ The run kernel increment settled the first two. Full reasoning lives in
   `uv lock --check`, records exact environment evidence, and never mutates an environment. Desktop
   distribution of those environments remains a later packaging decision.
 - **Partially settled.** Protocol-v2 policies enforce a bounded number of ready intermediate
-  checkpoints and can retain a final checkpoint. Export, whole-run trash/restore, best-checkpoint
-  selection, and explicit purge remain in the later retention milestone; `keepBest=true` is refused
+  checkpoints and can retain a final checkpoint. Minimum research records and independent evidence
+  export are part of Release A; advanced streamed archival, whole-run trash/restore, best-checkpoint
+  selection, and explicit purge remain in the later retention milestone. `keepBest=true` is refused
   until a selection metric is part of the experiment evidence.
 
 These decisions affect persistence, security, and distribution. Algorithm catalogs, visual design,

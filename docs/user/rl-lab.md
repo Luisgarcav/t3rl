@@ -63,9 +63,9 @@ opens its live view. The navigation under the lab header separates six investiga
 - **Behavior** replays bounded evidence artifacts. Control runs show observations, actions, rewards,
   and episode boundaries; LLM post-training runs show prompts, references, completions, parsed
   answers, verifier decisions, and scalar rewards.
-- **Compare** aggregates exact-step observations across verified seeds for one experiment. Missing
-  values remain missing, duplicate seeds are not counted twice, and configuration or environment
-  drift is called out before interpretation.
+- **Compare** shows descriptive exact-step observations across verified seeds and can request an
+  authoritative paired study comparison from retained evaluation evidence. Missing values stay
+  missing; the result identifies its statistical unit, uncertainty, and excluded runs or samples.
 - **Diagnostics** screens retained evidence for non-finite values, return collapse, excessive KL,
   low entropy, divergent value loss, stalled streams, and train/evaluation gaps. These are
   explainable inspection signals, not causal conclusions.
@@ -80,7 +80,7 @@ A quiet metric stream does not imply completion; only the lifecycle status does.
 
 Post-training runs publish two deliberately different outputs:
 
-- **Exact resume** checkpoints include the LoRA weights plus trainer, optimizer, scheduler, random
+- **Trainer-state resume** checkpoints include the LoRA weights plus trainer, optimizer, scheduler, random
   number generator, data cursor, and—when needed—gradient scaler state. RL Lab only offers
   **Resume step N** after the server has verified the directory, its SHA-256, and all compatibility
   evidence.
@@ -93,6 +93,10 @@ records the relation, parent ID, source artifact ID, source step, and exact sour
 lineage** shows that chain. A changed model or tokenizer revision, PEFT configuration, precision,
 quantization, trainable module set, framework, environment, or lock causes an explicit compatibility
 error instead of a best-effort continuation.
+
+Restoring trainer state and reproducing numerical results are separate guarantees. Numerical
+agreement requires a comparison with an uninterrupted run on a recorded platform using a declared
+tolerance. Matching hashes or seeds alone does not establish that agreement.
 
 Cancelling a post-training run first requests a graceful checkpoint. The worker gets the deadline
 declared in its resolved policy; the server then terminates the exact process it started if the
@@ -110,6 +114,17 @@ evidence tools.
 From a run detail, **Use as baseline** saves that run into the workspace research configuration and
 opens Autoresearch. From Autoresearch, **Open run** returns to the selected baseline evidence.
 
+### Export evidence
+
+For a finished, failed, cancelled, or interrupted run, select **Export evidence** in its detail
+header. The download contains the selected evidence and an offline verifier. The export dialog shows
+the archive and index hashes, file count, and omissions; the bundle lists the omitted evidence so
+another researcher can identify what is still needed. Exporting keeps the source run unchanged.
+
+Artifact integrity, environment reconstruction, trainer-state resume, numerical reproducibility,
+and repeatability on independent evaluation data require distinct evidence. See
+[Research records and evidence exports](./rl-evidence.md) for the verification workflow and scope.
+
 ## Interpretation limits
 
 Each run uses one seed and one local worker process. The server does not yet adopt a still-running
@@ -117,9 +132,10 @@ worker after its own restart; it marks that attempt `interrupted`, and a verifie
 attempt may be used to create a child run. Control experiments run on CPU; the bundled GRPO path
 requires CUDA and records token, wall-clock, GPU-hour, checkpoint, and retention limits. Its small
 fixed holdout demonstrates the before/after evaluation path but is not a statistically strong
-benchmark. It does not yet support arbitrary models, vLLM, or distributed training. Multi-seed comparison
-combines separate runs rather than launching a sweep, and uses the resolved seed as the statistical
-unit.
+benchmark. Project-defined models and offline methods must pass their runner's capability and
+validation checks; vLLM and distributed training remain unavailable. Descriptive comparison combines
+existing snapshots. Studies schedule separate runs and report the selected statistical unit:
+training-seed pairs, or paired evaluation samples within those seed pairs.
 Automatic diagnostics use configurable heuristics and should be checked against the task,
 algorithm, reward scale, and emission cadence.
 
@@ -164,26 +180,35 @@ Every research-catalog entry supports planning and evidence review. The surface 
 execution availability: the integrated Stable-Baselines3 path supports PPO and A2C for discrete or
 continuous control, DQN for discrete control, and SAC, TD3, and DDPG for continuous control. A run
 still requires a matching version-controlled experiment and a successful server capability probe.
-The integrated TRL preview adds GRPO with verifiable rewards for its bundled model and dataset.
-Other methods require a worker adapter; selecting one never pretends that its dependencies are
-installed.
+The integrated TRL paths include GRPO with verifiable rewards and project-defined SFT/DPO. Other
+methods require a worker adapter; selecting one never pretends that its dependencies are installed.
 
 The first Autoresearch slice is deliberately review-gated. The agent must stop after proposing one
 falsifiable hypothesis, a minimal diff, and an exact run plan. It cannot apply changes, start
 training, expand the budget, change the evaluator, or begin another iteration without a later
 explicit approval. This is not yet an unattended multi-iteration controller.
 
-# Studies and paired comparisons
+## Studies and paired comparisons
 
 A study groups two or more experiment variants under one immutable evaluation protocol and an
 explicit set of training, data, evaluation-sample, and generation seeds. Study runs are scheduled
 with bounded concurrency. A failed or cancelled member leaves the study partial instead of making
 it look complete.
 
-Use the Compare view with a study ID to request the server-owned paired analysis. The result always
-shows the number of paired seeds, exact seed set, estimator version, interval or “not enough
-evidence,” and unmatched or failed runs. T3RL refuses a protocol hash that does not match the
-declared sample IDs, decoding policy, dataset, split, and verifier identity.
+Use **Compare** with a study ID and its baseline/candidate labels to request paired analysis. Select
+an evaluation metric such as `eval_after/loss` or DPO's `eval_after/preference_accuracy`, the
+statistical unit, resample count, and missing-pair policy. The study result is independent of the
+descriptive chart metric selected below it.
+
+The result shows the paired seed count, exact seed set, estimator version, actual statistical unit,
+mean difference, confidence interval when available, and unmatched samples or excluded runs with
+their reasons. Version 2 honors the selected unit; old version-1 results remain historical evidence
+and are not recalculated as version 2 silently.
+
+Missing evaluation evidence, incompatible protocols, unsupported estimators, incomplete required
+pairs, and computation limits have distinct explanations. If the resampling budget is exceeded,
+reduce the requested count or study size. Legacy aggregate-only evaluation cannot supply paired
+sample evidence. A negative effect or inconclusive comparison remains a valid research outcome.
 
 ## Project-owned experiments
 

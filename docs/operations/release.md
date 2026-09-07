@@ -2,7 +2,89 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-This document covers the unified release workflow for stable and nightly desktop releases.
+## t3RL fork: source prereleases
+
+`Luisgarcav/t3rl` currently ships GitHub source releases. The previous release, `v0.0.34`, contained
+the automatically generated source archives and no uploaded assets. Publish `v0.0.35` as an alpha
+source prerelease while the remaining [local release criteria](../superpowers/plans/2026-09-04-serious-llm-post-training.md#release-a-trustworthy-local-post-training)
+are still open. The plain numeric tag is retained for version continuity; GitHub's prerelease flag
+is explicit and does not imply that Release A is complete.
+
+The inherited release, production relay, and mobile production workflows are restricted to
+`pingdotgg/t3code`. Their publication and deployment jobs skip in the fork, including manual and
+scheduled runs. Every downstream job in `release.yml` requires the guarded `preflight` job to
+succeed. Keep those guards in the commit being released. Do not dispatch the inherited workflows
+or invoke the npm publishing script for a fork source release.
+
+### Prepare and verify the source
+
+1. Confirm `origin` is `https://github.com/Luisgarcav/t3rl.git` and inspect the previous release with
+   `gh release view v0.0.34 --repo Luisgarcav/t3rl`.
+2. Align `apps/server/package.json`, `apps/desktop/package.json`, `apps/web/package.json`, and
+   `packages/contracts/package.json` using the shared script:
+
+   ```sh
+   node scripts/update-release-package-versions.ts 0.0.35
+   ```
+
+3. Update the README and save release notes to a file, for example
+   `/tmp/t3rl-v0.0.35-notes.md`. Include the release's actual changes, recorded validation, known
+   limits, and the next development steps. State that installation is from source and link the
+   README setup instructions.
+4. Review the complete diff and run focused checks for the changed code. For the release metadata
+   and documentation themselves:
+
+   ```sh
+   git diff --check
+   vp fmt --check README.md docs/operations/release.md apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json
+   vp test run scripts/update-release-package-versions.test.ts
+   ```
+
+   Run targeted tests and typechecks for any implementation changes included in the release.
+   CI owns the full suite; these commands do not authorize a local repository-wide check.
+
+5. Stage only the reviewed release files, commit them, and push to the fork explicitly:
+
+   ```sh
+   git status --short
+   git commit -m "chore(release): prepare t3RL 0.0.35"
+   git push origin HEAD:main
+   ```
+
+### Publish and verify the prerelease
+
+Use the committed SHA as the target so the release cannot drift with later changes to `main`.
+Check that the SHA is present on `origin/main` before publishing. The command creates the tag from
+that SHA; it does not require a separate tag push.
+
+```sh
+t3rl_release_sha=$(git rev-parse HEAD)
+git ls-remote origin refs/heads/main
+gh release create v0.0.35 \
+  --repo Luisgarcav/t3rl \
+  --target "$t3rl_release_sha" \
+  --title "t3RL v0.0.35 (alpha)" \
+  --prerelease \
+  --latest=false \
+  --notes-file /tmp/t3rl-v0.0.35-notes.md
+gh release view v0.0.35 --repo Luisgarcav/t3rl --json tagName,isPrerelease,assets,url
+```
+
+Confirm the remote tag resolves to the reviewed SHA and the release is a prerelease with no
+uploaded assets. Review any Actions runs created by the push: inherited publication and production
+deployment jobs must be skipped in this fork. If the notes need correction, edit the release body;
+if the source needs correction, publish a new version rather than moving the published tag.
+
+Source prereleases provide GitHub's source `.zip` and `.tar.gz` archives. They do not provide npm
+packages, desktop installers, signing, hosted deployments, or Electron auto-update metadata.
+`latest*.yml`, installer payloads, and blockmaps have not been delivered for this fork. The server
+package and remote self-update flow still use the upstream npm name `t3`; a source prerelease must
+not be advertised as an `npx t3` installation or update. A future binary release needs a separate
+fork publishing path and verification of both desktop and server update destinations.
+
+## Upstream stable and nightly releases
+
+The rest of this document describes the inherited unified workflow for `pingdotgg/t3code`.
 
 ## What the workflow does
 

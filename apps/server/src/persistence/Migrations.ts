@@ -58,6 +58,7 @@ import Migration0042 from "./Migrations/042_RlRunRequestId.ts";
 import Migration0043 from "./Migrations/043_RlArtifactIdentity.ts";
 import Migration0044 from "./Migrations/044_RlCheckpointLineage.ts";
 import Migration0045 from "./Migrations/045_RlStudies.ts";
+import Migration0046 from "./Migrations/046_RlEvaluationSamples.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -115,6 +116,7 @@ export const migrationEntries = [
   [43, "RlArtifactIdentity", Migration0043],
   [44, "RlCheckpointLineage", Migration0044],
   [45, "RlStudies", Migration0045],
+  [46, "RlEvaluationSamples", Migration0046],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

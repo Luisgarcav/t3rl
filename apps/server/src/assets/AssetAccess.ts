@@ -40,6 +40,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as RlArtifacts from "../rl/Artifacts.ts";
+import { evidenceExportPath, resolveEvidenceProjectDirectory } from "../rl/EvidencePaths.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
@@ -87,6 +88,13 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("rl-artifact"),
     runId: Schema.String,
     relativePath: Schema.String,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("rl-evidence"),
+    projectId: Schema.String,
+    exportId: Schema.String,
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -307,6 +315,28 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       fileName = path.basename(relativePath);
       break;
     }
+    case "rl-evidence": {
+      const config = yield* ServerConfig.ServerConfig;
+      const archive = evidenceExportPath({
+        rlRunsDir: config.rlRunsDir,
+        projectId: input.resource.projectId,
+        exportId: input.resource.exportId,
+      });
+      if (
+        archive === null ||
+        !(yield* fileSystem.exists(archive).pipe(Effect.orElseSucceed(() => false)))
+      )
+        return yield* new AssetRlArtifactNotFoundError({ resource: input.resource });
+      claims = {
+        version: 1,
+        kind: "rl-evidence",
+        projectId: input.resource.projectId,
+        exportId: input.resource.exportId,
+        expiresAt,
+      };
+      fileName = `${input.resource.exportId}.tar`;
+      break;
+    }
     case "project-favicon": {
       const workspaceRoot = yield* workspacePaths.normalizeWorkspaceRoot(input.resource.cwd).pipe(
         Effect.mapError(
@@ -467,6 +497,39 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     );
     return Option.isSome(info) && info.value.type === "File"
       ? ({ kind: "file", path: canonicalFile.value } satisfies ResolvedAsset)
+      : null;
+  }
+
+  if (claims.kind === "rl-evidence") {
+    const config = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const archive = evidenceExportPath({
+      rlRunsDir: config.rlRunsDir,
+      projectId: claims.projectId,
+      exportId: claims.exportId,
+    });
+    if (archive === null) return null;
+    const projectRoot = yield* resolveEvidenceProjectDirectory(
+      config.rlRunsDir,
+      claims.projectId,
+    ).pipe(Effect.orElseSucceed(() => null));
+    if (projectRoot === null) return null;
+    const root = path.join(projectRoot, "exports");
+    const resolved = yield* Effect.all([
+      fileSystem.realPath(root),
+      fileSystem.realPath(archive),
+    ]).pipe(Effect.orElseSucceed(() => null));
+    if (
+      resolved === null ||
+      resolved[0] !== root ||
+      resolved[1] !== path.join(root, `${claims.exportId}.tar`) ||
+      !resolved[1].startsWith(`${resolved[0]}${path.sep}`)
+    )
+      return null;
+    const info = yield* fileSystem.stat(resolved[1]).pipe(Effect.orElseSucceed(() => null));
+    return info?.type === "File"
+      ? ({ kind: "file", path: resolved[1] } satisfies ResolvedAsset)
       : null;
   }
 

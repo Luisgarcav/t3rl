@@ -150,5 +150,18 @@ export function createRlEnvironmentAtoms<R, E>(
       label: "environment-data:rl:validate-experiment",
       tag: WS_METHODS.rlValidateExperiment,
     }),
+    exportEvidence: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:export-evidence",
+      tag: WS_METHODS.rlExportEvidence,
+    }),
+    recordResearch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rl:record-research",
+      tag: WS_METHODS.rlRecordResearch,
+    }),
+    researchRecord: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:rl:research-record",
+      tag: WS_METHODS.rlGetResearchRecord,
+      staleTimeMs: 30_000,
+    }),
   };
 }

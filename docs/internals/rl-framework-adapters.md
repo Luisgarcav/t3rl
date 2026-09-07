@@ -40,14 +40,35 @@ are translated into bounded logs, metrics, and the existing failure codes.
 
 ## Current status
 
-| Backend                 | Status             | Current boundary                                                                      |
-| ----------------------- | ------------------ | ------------------------------------------------------------------------------------- |
-| Stable-Baselines3       | Implemented        | Direct local Python worker for control tasks                                          |
-| Native TRL              | Implemented        | Single-process CUDA GRPO/RLVR, LoRA export, exact checkpoints, and holdout evaluation |
-| Axolotl                 | Implemented        | Equivalent evidence through translated Axolotl/TRL configuration and callbacks        |
-| Accelerate / `torchrun` | Planned launcher   | Launch ranks while exposing one worker protocol stream                                |
-| FSDP / DeepSpeed        | Planned strategies | Remain framework configuration, never client lifecycle variants                       |
-| vLLM                    | Planned sidecar    | Adapter owns readiness, GPU assignment, shutdown, and weight synchronization evidence |
+| Backend                 | Implementation boundary                                                                        | Verification boundary                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Stable-Baselines3       | Direct local Python worker for control tasks                                                   | Real-worker smoke is separate from fake protocol tests                                                                        |
+| Native TRL              | Single-process GRPO/RLVR and SFT/DPO, LoRA export, trainer checkpoints, holdout evaluation     | SFT/DPO CPU/CUDA and native GRPO CUDA trained, evaluated, saved, independently loaded, and resumed on the recorded Linux host |
+| Axolotl                 | GRPO adapter plus SFT/DPO configuration and CLI translation into the shared evidence contracts | SFT/DPO CUDA lifecycle passes in its isolated pinned environment; Axolotl GRPO remains unverified                             |
+| Accelerate / `torchrun` | Planned launcher with one worker protocol stream                                               | Enters after a measured reference need; requires rank/failure and real two-GPU proof                                          |
+| FSDP / DeepSpeed        | Planned strategies behind trainer/launcher configuration                                       | Requires state-sharding, resume and portable-output evidence on the selected version                                          |
+| vLLM                    | Planned supervised sidecar                                                                     | Requires measured rollout bottleneck and readiness/weight-sync/failure evidence                                               |
+
+“Implemented” is not “framework-verified” or “release gate passed.” The
+[post-training status table](../superpowers/plans/2026-09-04-serious-llm-post-training.md#delivery-status-2026-09-05)
+tracks remaining gates. A CUDA capability probe and a standard-library checkpoint fixture establish
+neither real optimization nor framework-native continuation.
+
+The [dated real-framework report and exact commands](../benchmarks/rl-framework-validation/README.md)
+cover fourteen offline method/device/seed lifecycle cases plus native Qwen GRPO. They record
+same-device uninterrupted/resumed numerical agreement within declared tolerances, with the original
+three-seed TRL CUDA/ablation source snapshot distinguished from final independent-data-seed checks.
+The offline cases use a tiny local model and two held-out records; GRPO's held-out score decreased.
+These results verify the named lifecycle paths on one host and do not establish a quality claim,
+cross-host reconstruction, or distributed support.
+
+The [production-service reference](../benchmarks/rl-post-training-validation/production-evidence-2026-09-05.json)
+additionally validates native TRL SFT through real project resolution, capability probing, source
+capture, worker spawning, and manager persistence. Six CUDA runs and one checkpoint child retain
+the declared data/training seeds and evaluation protocol; the child matches uninterrupted final
+weights. Public comparison and offline export/reload pass in the same small-fixture scope. The
+[Release A instructions](../superpowers/plans/2026-09-04-serious-llm-post-training.md#release-a-trustworthy-local-post-training)
+include its opt-in command and remaining scheduling/client/reproduction boundaries.
 
 Stable-Baselines3, native TRL, and Axolotl use independent committed `uv` projects. Their interpreters
 are selected with `T3RL_PYTHON_STABLE_BASELINES3`, `T3RL_PYTHON_TRL`, and
@@ -55,8 +76,8 @@ are selected with `T3RL_PYTHON_STABLE_BASELINES3`, `T3RL_PYTHON_TRL`, and
 runs `uv lock --check` when it finds project metadata beside the selected environment, never syncs
 or installs, and records the lock digest plus runtime and accelerator evidence in the manifest.
 
-Axolotl pins exact dependency versions, and no release accepts the TRL version the native adapter
-targets, so it remains isolated from native TRL. Its GRPO documentation
+The native environment pins TRL 1.10.0; Axolotl has its own 0.18.0 lock and transitive dependency
+constraints, so the environments stay isolated. Axolotl's GRPO documentation
 presents a vLLM server as required; the schema defaults `use_vllm` to false and guards every vLLM
 call behind it, so the first adapter runs single-GPU without a sidecar.
 
@@ -83,6 +104,14 @@ resulting trainer. Neither adapter may silently fall back from exact resume to a
 Before measuring a resumed run's starting holdout, both adapters preload the checkpoint's model
 weights; the later `train(resume_from_checkpoint=...)` call remains responsible for restoring the
 optimizer, scheduler, RNG, cursor, and trainer state.
+
+The existing “exact resume” operation names describe restoring this complete trainer state. They
+do not promise bitwise results across platforms. Artifact integrity, environment reconstruction,
+trainer-state resume, numerical agreement within a predeclared platform/tolerance, and empirical
+repeatability on independent holdout data are separate
+[reproducibility guarantees](../superpowers/plans/2026-09-04-serious-llm-post-training.md#reproducibility-guarantees).
+Every real-framework resume test records which state was restored and compares final weights and
+evaluation with an uninterrupted control under its declared tolerance.
 
 Long blocking trainer calls send explicit protocol-v2 `heartbeat` messages for liveness and
 `resource` messages for `system/*` samples. Resource observations may join the bounded metric store;
@@ -114,14 +143,25 @@ Every adapter must:
 12. Derive reported statistics from every scored sample, never from the bounded evidence
     excerpt, and divide that excerpt between phases so a long training phase cannot leave a
     run without post-training evidence.
+13. Retain the scored sample values and identities needed by the declared comparison estimator in a
+    verified evaluation artifact. A display excerpt cannot stand in for the full declared paired
+    sample set; unavailable evidence must produce an explicit incomplete comparison.
 
 ## Delivery order
 
-1. Prove the evaluation and telemetry contract with the native TRL adapter.
-2. ~~Add checkpoint retention and resume semantics without changing the lifecycle model.~~ Done.
-3. ~~Add an Axolotl adapter for one version-pinned GRPO configuration.~~ Done.
-4. Add an Accelerate launcher with a deterministic two-GPU smoke fixture.
-5. Add FSDP or DeepSpeed as strategies, then a separately supervised vLLM sidecar.
+1. Close the real local reference investigation using the implemented TRL SFT/DPO/GRPO paths:
+   independent seeds and final holdout, checkpoint/resume, a controlled ablation, public comparison,
+   a durable research record, offline export verification, and second-person reproduction.
+2. Record separate results for every advertised Axolotl method using its pinned environment. Keep
+   unsupported options and unverified method/device combinations visible.
+3. Add RLOO or PPO when a named reference question needs the method. The
+   [TRL 1.10.0 taxonomy](https://huggingface.co/docs/trl/v1.10.0/index) marks `PPOTrainer`
+   experimental; declare its supported version and maintenance boundary before claiming parity.
+4. Add an Accelerate/`torchrun` launcher when measured model capacity or throughput requires more
+   than the local single-GPU boundary. Use fake ranks for deterministic failure tests and actual
+   two-GPU training for framework verification.
+5. Add FSDP/DeepSpeed for the measured state-memory requirement, then a supervised vLLM sidecar only
+   when measured rollout generation warrants it. Record checkpoint and synchronization costs.
 
-This order keeps failure attribution clear. Supporting every launcher and strategy at once would make
-it impossible to distinguish a protocol defect from a trainer, collective, or rollout-service defect.
+All requested methods and integrations remain in the long-term plan. This order makes the current
+evidence workflow useful and supplies a concrete experiment for each expansion.

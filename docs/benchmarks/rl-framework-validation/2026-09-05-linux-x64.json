@@ -1,0 +1,1069 @@
+{
+  "version": 1,
+  "recordedAt": "2026-09-05T20:29:08.852056+00:00",
+  "status": "passed",
+  "scope": "Real framework lifecycle and evidence validation on one host; no model-quality or cross-host reproduction claim.",
+  "hardware": {
+    "platform": "linux-x64",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "vramMiB": 8188,
+    "driverVersion": "610.57.04"
+  },
+  "sourceSnapshots": {
+    "referenceBeforeSeedTransport": {
+      "offline.py": "c14652a05f8f09831766f9ee1b3d1dd7cef6a2cd0fbb82cdaa08c5a778328b9f",
+      "trl_offline_worker.py": "9df9661339c6bd4ad5dc25a131340b117a845c2da402efb183909e93c8bf2e47",
+      "checkpointing.py": "5058472deb6fe07363d55ac251815c1e571f0f3c3e14e4264739b4b2d9915b78",
+      "trl_worker.py": "32d3d4e644c713e9790f20f63c7db2206aa8b7798b28294758617be0db9b51e7",
+      "rlvr.py": "85704dab40063e2dc2b419ab3a3f9f3f9ae277185257265dae6da1e949e92e05",
+      "offline_validation.py": "e58912c6d3e5220b3bc0c83a26f738d83232609b44828d9ecd5aee88ed32321b"
+    },
+    "independentSeedTransport": {
+      "offline.py": "48bec2516365725ff9b84feba46d17683100c39d597d7516a47837c375904ea0",
+      "trl_offline_worker.py": "a27b5ee410e9077ef4d04396c79b5e71a7abfbe152ee3238563b542885b4553f",
+      "axolotl_offline_worker.py": "86cb85a8f799b4b0d445b0d3189d04e538c8f430ebf6a6c59d030280d1b1d75d",
+      "checkpointing.py": "5058472deb6fe07363d55ac251815c1e571f0f3c3e14e4264739b4b2d9915b78",
+      "trl_worker.py": "32d3d4e644c713e9790f20f63c7db2206aa8b7798b28294758617be0db9b51e7",
+      "rlvr.py": "85704dab40063e2dc2b419ab3a3f9f3f9ae277185257265dae6da1e949e92e05",
+      "offline_validation.py": "b2e50c6ecad9d2aba436cb5a1ba8029febc62b4c68c2d42a268cb4c33b9dbc92"
+    }
+  },
+  "environments": {
+    "trl-1.10.0": {
+      "dependencies": {
+        "python": "3.12.12",
+        "torch": "2.14.0",
+        "trl": "1.10.0",
+        "peft": "0.19.1",
+        "transformers": "5.16.1",
+        "datasets": "5.0.1",
+        "accelerate": "1.14.0",
+        "cudaRuntime": "13.0",
+        "cudnnVersion": 92400
+      },
+      "environmentLockSha256": "bc0814a37063388dff1ebc84b5385bdd0841f79de20a55d9459d90472fa6720b"
+    },
+    "axolotl-0.18.0": {
+      "dependencies": {
+        "python": "3.12.12",
+        "torch": "2.12.1",
+        "trl": "1.8.0",
+        "peft": "0.19.1",
+        "transformers": "5.14.1",
+        "datasets": "4.8.4",
+        "accelerate": "1.13.0",
+        "cudaRuntime": "13.0",
+        "cudnnVersion": 92000,
+        "axolotl": "0.18.0"
+      },
+      "environmentLockSha256": "bf7489a5b85735da0117363b0dfd246ac8f5d0e1e6eb1cb01209c69cfab3563e"
+    }
+  },
+  "datasets": {
+    "tiny-sft": {
+      "sha256": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "format": "sft-text",
+      "source": "offline_validation.py generated arithmetic records",
+      "trainingSampleIds": [
+        "arithmetic-0",
+        "arithmetic-1",
+        "arithmetic-2",
+        "arithmetic-3",
+        "arithmetic-4",
+        "arithmetic-5",
+        "arithmetic-6",
+        "arithmetic-7"
+      ],
+      "evaluationSampleIds": ["arithmetic-8", "arithmetic-9"],
+      "trainingRows": 8,
+      "evaluationRows": 2
+    },
+    "tiny-dpo": {
+      "sha256": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "format": "dpo-preference",
+      "source": "offline_validation.py generated arithmetic records",
+      "trainingSampleIds": [
+        "arithmetic-0",
+        "arithmetic-1",
+        "arithmetic-2",
+        "arithmetic-3",
+        "arithmetic-4",
+        "arithmetic-5",
+        "arithmetic-6",
+        "arithmetic-7"
+      ],
+      "evaluationSampleIds": ["arithmetic-8", "arithmetic-9"],
+      "trainingRows": 8,
+      "evaluationRows": 2
+    }
+  },
+  "protocols": {
+    "trl-three-seed-cuda-sft": {
+      "version": 1,
+      "datasetFingerprint": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "495fcb5856a1e01e6467a1ad8caf3f78463a2793ab623a5b4a1e2dd2dbb36a55",
+      "protocolSha256": "e27e44a935f4a8080fd884e3d1244136c84c4e48738b5c7ae1a67785ac5c6435"
+    },
+    "trl-three-seed-cuda-dpo": {
+      "version": 1,
+      "datasetFingerprint": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "a2e1ba2ea0f515061200506e004a53cbfce973e50d523aedb9b3f2119c2b9e48",
+      "protocolSha256": "c646e810ed3c601352e390ddb08ea205fe21a13d991c36d1f8294b4193e28ec1"
+    },
+    "trl-cpu-sft": {
+      "version": 1,
+      "datasetFingerprint": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "6292b7093520af4d309c0bd9a64935ac0254949b611adb7b5dc57d689247132e",
+      "protocolSha256": "ae8bf0aa84d9e929f2fb549591cb02951eaa64d720a2bf37f0a2802060e4ec59"
+    },
+    "trl-cpu-dpo": {
+      "version": 1,
+      "datasetFingerprint": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "68afc7a2682d3e1cb8de2f61018774807fe1824818a4ee27201d71a674d7164c",
+      "protocolSha256": "5a312ce7e53f2a536e1a1db18d7be676cd4ae336980dd6d6d56f09c4bc888599"
+    },
+    "trl-independent-seed-cuda-sft": {
+      "version": 1,
+      "datasetFingerprint": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "538efbb1332e567f1b2e3956efba650603fbcd158f5582a4deea315cc6c94097",
+      "protocolSha256": "cb2469898e73ae23091d4f2aa1ad69495e4e0e34b29613474e1985ee6fb024ee"
+    },
+    "trl-independent-seed-cuda-dpo": {
+      "version": 1,
+      "datasetFingerprint": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "57f6ed733f38d67d3467568dc80f6adccf1341e33171a8f432384bcd28da128e",
+      "protocolSha256": "b5e301a0e61f40c259cb60a99fc2444a6553cef478d37d7d42636d792c919390"
+    },
+    "trl-independent-seed-cpu-sft": {
+      "version": 1,
+      "datasetFingerprint": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "704ab438cc74fb46bbe62d0f6b85eb81e9cca332077c120e1a469724a38ca626",
+      "protocolSha256": "c7bc7a5c42336eefd30bd1cdbd6596d6b32fa359297c9e04fe90a1abbdf99b9d"
+    },
+    "trl-independent-seed-cpu-dpo": {
+      "version": 1,
+      "datasetFingerprint": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "c3989b1b9b656acbaebde880def79d2715a2ec644479892d3ed39c77423f725f",
+      "protocolSha256": "28a4901cc829ee8f090858a36b26bf27ad7cba19757e6df2fef664e26030bece"
+    },
+    "axolotl-independent-seed-cuda-sft": {
+      "version": 1,
+      "datasetFingerprint": "d00bb8cc512f6fe6946ad48e623867f55a80fab855113d31a73f9d4539397168",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "cfdd8e7e04ddf46463991544e59715b9408bcd8a35401862ed4bd9e81ef12dd2",
+      "protocolSha256": "ca95831bb864731de051fc751e102c31396500a7b5b7d7c296cb223fc73f50c2"
+    },
+    "axolotl-independent-seed-cuda-dpo": {
+      "version": 1,
+      "datasetFingerprint": "dfe43dd73d6d38fd1e31ca3eb96ff42fdf3d05267a7114de36a3e3d73e47f943",
+      "split": "test",
+      "sampleIds": ["arithmetic-8", "arithmetic-9"],
+      "generationSeedPolicy": "fixed-per-sample",
+      "decoding": {},
+      "verifierSha256": "572435445a8ce7fc68eb9e91a9942336f3e5a7cbd5c6a713969de19192301667",
+      "protocolSha256": "ee9695f344cd78c2cbf21e1daa0b5dc77d29ffc0db5178524886218e2ae8a788"
+    }
+  },
+  "suites": [
+    {
+      "id": "trl-three-seed-cuda",
+      "backend": "trl",
+      "device": "cuda",
+      "environment": "trl-1.10.0",
+      "sourceSnapshot": "referenceBeforeSeedTransport",
+      "model": {
+        "kind": "generated-tiny-llama",
+        "parameterCount": 13024,
+        "layers": 1,
+        "hiddenSize": 32,
+        "vocabularySize": 42,
+        "contentSha256": "39c2c9dfde4831bdd1ede4b8ca77bb57d367125f9c5105ee10382c413b355bb8"
+      },
+      "cases": [
+        {
+          "method": "sft",
+          "trainingSeed": 7,
+          "dataSeed": 7,
+          "dataset": "tiny-sft",
+          "protocol": "trl-three-seed-cuda-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17163776,
+          "before": {
+            "eval_loss": 3.7519192695617676
+          },
+          "after": {
+            "eval_loss": 3.7162935733795166
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.7208926677703857
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7116944789886475
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "687b831dbc3ace18c0fcc1bec1d6f4215c60f73ffc4c4d8a63854641ef68c47b",
+            "sampleEvaluation": "f19bc28b166e62c8cf724d9eb78b906344bca9010cce7c66cac40c0266eff359",
+            "adapter": "dc29f4a53f3a281564dc9c2a84835db2a1f7c47c6c2483d6f21693ef981d64cc"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 3.7519192695617676
+            },
+            "after": {
+              "eval_loss": 3.7519192695617676
+            }
+          }
+        },
+        {
+          "method": "sft",
+          "trainingSeed": 19,
+          "dataSeed": 19,
+          "dataset": "tiny-sft",
+          "protocol": "trl-three-seed-cuda-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17163776,
+          "before": {
+            "eval_loss": 3.7519192695617676
+          },
+          "after": {
+            "eval_loss": 3.7292747497558594
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.732898712158203
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7256507873535156
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "63c537bb8b007e3e47a1a733b3d607344f8da6b943a864b71b7a57d9e5d4016a",
+            "sampleEvaluation": "284f1e7fabac494fe5a64216a605f003feba0da7d95e0029167bd342ba1a4297",
+            "adapter": "5285cc402df2cc2f781cf4b33dd85f63a84e7a5c70690476d1c35c469d2eac13"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 3.7519192695617676
+            },
+            "after": {
+              "eval_loss": 3.7519192695617676
+            }
+          }
+        },
+        {
+          "method": "sft",
+          "trainingSeed": 41,
+          "dataSeed": 41,
+          "dataset": "tiny-sft",
+          "protocol": "trl-three-seed-cuda-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17163776,
+          "before": {
+            "eval_loss": 3.7519192695617676
+          },
+          "after": {
+            "eval_loss": 3.732128143310547
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.7406883239746094
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7235679626464844
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "4c30babf22a13c3035e8725e1784f3fb79803318f84416b9d196af2748186af5",
+            "sampleEvaluation": "d681421ca51d7ff206f728fb1c536f2942e8272096e22d5c0835f6ccb0adaa33",
+            "adapter": "665437e36dd55bad926f185f707a579f6e847343ae61b468e214504d8e041cc0"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 3.7519192695617676
+            },
+            "after": {
+              "eval_loss": 3.7519192695617676
+            }
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 7,
+          "dataSeed": 7,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-three-seed-cuda-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17207296,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6930352449417114,
+            "eval_rewards/accuracies": 0.5,
+            "eval_rewards/margins": 0.0002238750457763672
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6928805112838745,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.0005334378220140934
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6931900382041931,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -8.568773046135902e-5
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "900e2e86385cfe1074ebed06cc65cd23c6b14e0a4a6876b555512dfe2e220cce",
+            "sampleEvaluation": "9a4d8c8b8d155f8ad5e07334064bbe1e58d8009f9c76499caaa6fe3e431f5d63",
+            "adapter": "81630b1258d7c8196033f97c8eb44128d1e13bea0f6582035ec3593f915d8d1c"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            },
+            "after": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            }
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 19,
+          "dataSeed": 19,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-three-seed-cuda-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17207296,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6932053565979004,
+            "eval_rewards/accuracies": 0.5,
+            "eval_rewards/margins": -0.00011620525037869811
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6933854818344116,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -0.0004765034536831081
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6930251717567444,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.00024409295292571187
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "c0c5fe29c86155259538fbe21b5b293b5d6045b632b6a23fbc41046945c915bb",
+            "sampleEvaluation": "8ee2e2fa6c82592c988d25a213ba040ba1f76cb1e5df86b7eeb302f51d405b94",
+            "adapter": "51492e9eb9e368c53308ebd27282e394fafdd5fb08f22979e337535784b3e9b6"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            },
+            "after": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            }
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 41,
+          "dataSeed": 41,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-three-seed-cuda-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17207296,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6927381157875061,
+            "eval_rewards/accuracies": 1.0,
+            "eval_rewards/margins": 0.0008183955796994269
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6924582123756409,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.001378393149934709
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6930180191993713,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.0002583980094641447
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "ec631aec1f68b863f6e2e76568738917f02aa19a8dc3a22e7b19db37be824194",
+            "sampleEvaluation": "c0efafde4c913c31a7f569b392d73e5c1cd1b22da3fd68155c856857cd55cefc",
+            "adapter": "1cd67b3af2b2ed44d67338746c9fbf5eb9539f091250b590ec4911a940d5c9a7"
+          },
+          "zeroLearningRateAblation": {
+            "before": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            },
+            "after": {
+              "eval_loss": 0.6931471824645996,
+              "eval_rewards/accuracies": 0.0,
+              "eval_rewards/margins": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "trl-cpu",
+      "backend": "trl",
+      "device": "cpu",
+      "environment": "trl-1.10.0",
+      "sourceSnapshot": "referenceBeforeSeedTransport",
+      "model": {
+        "kind": "generated-tiny-llama",
+        "parameterCount": 13024,
+        "layers": 1,
+        "hiddenSize": 32,
+        "vocabularySize": 42,
+        "contentSha256": "39c2c9dfde4831bdd1ede4b8ca77bb57d367125f9c5105ee10382c413b355bb8"
+      },
+      "cases": [
+        {
+          "method": "sft",
+          "trainingSeed": 7,
+          "dataSeed": 7,
+          "dataset": "tiny-sft",
+          "protocol": "trl-cpu-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": null,
+          "before": {
+            "eval_loss": 3.7519190311431885
+          },
+          "after": {
+            "eval_loss": 3.7162935733795166
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.7208926677703857
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7116944789886475
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "31efaeb6e246c7c158912c6079e0c9527e2b9ee6b33bc97d994377789a854521",
+            "sampleEvaluation": "8be3e47c4dd1134c347b000428f76082d6cfc91af38cf0231e880084b7bc80e6",
+            "adapter": "73d01e4655535d7410d1bf57c204c9a36518fe5b8061398846f512db59d741c9"
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 7,
+          "dataSeed": 7,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-cpu-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": null,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6930352449417114,
+            "eval_rewards/accuracies": 0.5,
+            "eval_rewards/margins": 0.00022387498756870627
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6928805112838745,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.0005334377055987716
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6931900382041931,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -8.568773046135902e-5
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "fb31c22708fa6b350c4d714763fbb25907db6f986af9d61282384812ed5dfe8f",
+            "sampleEvaluation": "3191fe0dac8f8405b61f41f822bbf4e656ff087c1acd532265d8c952f700b75f",
+            "adapter": "c3bebc03a9b297ad9af29368827beb89469814aab40b8222d5b10b5029224be5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trl-independent-seed-cuda",
+      "backend": "trl",
+      "device": "cuda",
+      "environment": "trl-1.10.0",
+      "sourceSnapshot": "independentSeedTransport",
+      "model": {
+        "kind": "generated-tiny-llama",
+        "parameterCount": 13024,
+        "layers": 1,
+        "hiddenSize": 32,
+        "vocabularySize": 42,
+        "contentSha256": "39c2c9dfde4831bdd1ede4b8ca77bb57d367125f9c5105ee10382c413b355bb8"
+      },
+      "cases": [
+        {
+          "method": "sft",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-sft",
+          "protocol": "trl-independent-seed-cuda-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17163776,
+          "before": {
+            "eval_loss": 3.7519192695617676
+          },
+          "after": {
+            "eval_loss": 3.7190725803375244
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.7228121757507324
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7153329849243164
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "9e4275ce22baec00034944a082b46f76c918875243d927cad37b5905534f6116",
+            "sampleEvaluation": "62edd92cbfb43a8a31e7694f4efd785812e1526adfc8a3a891d774af83592a33",
+            "adapter": "b31b7ef6dc673007fe10c5384fcc54b129104880fdd56135be25d13e33af9b85"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-independent-seed-cuda-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17207296,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6931698322296143,
+            "eval_rewards/accuracies": 0.5,
+            "eval_rewards/margins": -4.44412580691278e-5
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6922429203987122,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.0018093108665198088
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6940966844558716,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -0.0018981933826580644
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "f9de1d9462343d11d1a4a5c070723461198f55d1df315c84369a71e259d6899f",
+            "sampleEvaluation": "335e965e15cc0fcd60d2326e43e3dcb45cba2b206371913b51711266fa8655c9",
+            "adapter": "e8023f8c8c6e20447f91bea8cef27d3115ead5d6ab8806b735c363f03ce05bde"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trl-independent-seed-cpu",
+      "backend": "trl",
+      "device": "cpu",
+      "environment": "trl-1.10.0",
+      "sourceSnapshot": "independentSeedTransport",
+      "model": {
+        "kind": "generated-tiny-llama",
+        "parameterCount": 13024,
+        "layers": 1,
+        "hiddenSize": 32,
+        "vocabularySize": 42,
+        "contentSha256": "39c2c9dfde4831bdd1ede4b8ca77bb57d367125f9c5105ee10382c413b355bb8"
+      },
+      "cases": [
+        {
+          "method": "sft",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-sft",
+          "protocol": "trl-independent-seed-cpu-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": null,
+          "before": {
+            "eval_loss": 3.7519190311431885
+          },
+          "after": {
+            "eval_loss": 3.7190723419189453
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.722811698913574
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.7153332233428955
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "b6f0b313ef66c7ab0594d37eeb7113b9b38330e60d8f40200c7a7be637ea321d",
+            "sampleEvaluation": "49fb1b102050196e8fde5bf8014bfc36a7a833e6bc1aaf4f34b66bb3fcb41d30",
+            "adapter": "874e51a2c2b54b5d062917f5af0d26d6ce6a3c41ab18ee0eb03f6a2d556cf241"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-dpo",
+          "protocol": "trl-independent-seed-cpu-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": null,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6931698322296143,
+            "eval_rewards/accuracies": 0.5,
+            "eval_rewards/margins": -4.4417392928153276e-5
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6922429203987122,
+                "eval_after/preference_accuracy": 1.0,
+                "eval_after/reward_margin": 0.0018093585968017578
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6940966844558716,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -0.0018981933826580644
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "5e20f342db503cb115c39adbd1fb5354273b853852c6d60ca2a41942a23efad7",
+            "sampleEvaluation": "1e7c2d2bdf140fd9f358d5c5dd2ca5bce000db97c5e432aa3379313613307a88",
+            "adapter": "4fd093256cd8d510e14a1fa3b8722bb70ac1945e3c73a4f16185e548c14e69b6"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        }
+      ]
+    },
+    {
+      "id": "axolotl-independent-seed-cuda",
+      "backend": "axolotl",
+      "device": "cuda",
+      "environment": "axolotl-0.18.0",
+      "sourceSnapshot": "independentSeedTransport",
+      "model": {
+        "kind": "generated-tiny-llama",
+        "parameterCount": 13024,
+        "layers": 1,
+        "hiddenSize": 32,
+        "vocabularySize": 42,
+        "contentSha256": "667d6be58f1b1c0d1e8e563008c8f3a1966ccf0350d348f4b5a81c749b4e5774"
+      },
+      "cases": [
+        {
+          "method": "sft",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-sft",
+          "protocol": "axolotl-independent-seed-cuda-sft",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17102848,
+          "before": {
+            "eval_loss": 3.751915454864502
+          },
+          "after": {
+            "eval_loss": 3.7188615798950195
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 3.7229537963867188
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 3.714769124984741
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "ad3de0da332c29f174103649113cb828f5e95fae0a15b528fdc49ce284f78efb",
+            "sampleEvaluation": "b002acdd7708a5b976c0b49c22921c6bee57d2e21e031bb9b31a64c803fe7a65",
+            "adapter": "8762234c950d08ad3b119f2f416b5c4530f5fda21c96bfd2fb4ac69596efbdc8"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        },
+        {
+          "method": "dpo",
+          "trainingSeed": 7,
+          "dataSeed": 19,
+          "dataset": "tiny-dpo",
+          "protocol": "axolotl-independent-seed-cuda-dpo",
+          "optimizerSteps": 6,
+          "interruptedAtStep": 3,
+          "resumeMaximumParameterError": 0.0,
+          "cudaPeakMemoryBytes": 17205760,
+          "before": {
+            "eval_loss": 0.6931471824645996,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": 0.0
+          },
+          "after": {
+            "eval_loss": 0.6933633089065552,
+            "eval_rewards/accuracies": 0.0,
+            "eval_rewards/margins": -0.00043220519728492945
+          },
+          "samples": [
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-8",
+              "values": {
+                "eval_after/loss": 0.6934690475463867,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -0.0006435394170694053
+              }
+            },
+            {
+              "generationSeed": null,
+              "sampleId": "arithmetic-9",
+              "values": {
+                "eval_after/loss": 0.6932576298713684,
+                "eval_after/preference_accuracy": 0.0,
+                "eval_after/reward_margin": -0.0002208709775004536
+              }
+            }
+          ],
+          "artifactSha256": {
+            "summary": "99bf5626c852bf61376c206ee88ce3956877e37a61606629aad1ebda6c61733d",
+            "sampleEvaluation": "fab1062beb61a726cb75dbfc538f6200a3f5844bbf6b4367af6702c5c747bb25",
+            "adapter": "68df01575d217d3be961d7dfe640394172d2551e62d770e39303b1b65e9cc327"
+          },
+          "seedUsage": {
+            "data": "training-sampler",
+            "evaluationSample": "not-used-fixed-held-out-tail",
+            "generation": "not-used-teacher-forced-evaluation",
+            "training": "model-initialization-and-training"
+          }
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "optimizerSteps": 6,
+    "independentlyLoadedPeftAdapter": true,
+    "loraWeightsUpdated": true,
+    "interruption": "SIGTERM after checkpoint receipt; graceful trainer state published",
+    "resumableState": [
+      "trainer_state.json",
+      "optimizer.pt",
+      "scheduler.pt",
+      "rng_state.pth",
+      "t3rl-dataset-cursor.json"
+    ],
+    "resumeComparison": {
+      "absoluteTolerance": 1e-6,
+      "relativeTolerance": 1e-5,
+      "scope": "same method, seed set, runtime and device vs uninterrupted run"
+    },
+    "heldOutSampleMeanMatchesScalar": true,
+    "missingMetricValuesRemainMissing": true
+  },
+  "limitations": [
+    "Tiny randomly initialized SFT/DPO model and two held-out examples do not establish useful ability or scientific improvement.",
+    "Three-seed reference matrix used equal training/data seeds; final seed transport separately tested with training=7 and data=19.",
+    "Evaluation-sample and generation seed roles do not apply to deterministic fixed-tail teacher-forced offline evaluation.",
+    "CPU and CUDA continuations compared independently; cross-device equality was not asserted.",
+    "Separate frozen virtual environments on one host are not independent clean-machine or second-researcher reproduction.",
+    "No distributed, vLLM, DeepSpeed, Axolotl GRPO, or full-parameter training validation.",
+    "Absolute run/model paths were removed from this record; local model paths must be remapped when reloading a portable bundle."
+  ],
+  "grpo": {
+    "status": "passed",
+    "environment": "trl-1.10.0",
+    "sourceSnapshot": "referenceBeforeSeedTransport",
+    "config": {
+      "datasetId": "arithmetic-rlvr-v2",
+      "maxSteps": 4,
+      "checkpointCadenceSteps": 2,
+      "maxCompletionLength": 12,
+      "evaluationRows": 4,
+      "evaluationBatchSize": 4,
+      "evaluationNumGenerations": 4,
+      "maxPromptLength": 128,
+      "perDeviceTrainBatchSize": 4,
+      "numGenerations": 4,
+      "maxGeneratedTokens": 600,
+      "maxWallClockSeconds": 180,
+      "maxGpuHours": 0.05,
+      "precision": "bf16",
+      "loraRank": 4,
+      "loraAlpha": 8.0,
+      "loraDropout": 0.0,
+      "gradientCheckpointing": false,
+      "temperature": 1.2,
+      "learningRate": 5e-5
+    },
+    "trainingSeed": 7,
+    "environmentLockSha256": "bc0814a37063388dff1ebc84b5385bdd0841f79de20a55d9459d90472fa6720b",
+    "baseModelId": "Qwen/Qwen2.5-0.5B-Instruct",
+    "baseModelRevision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "datasetId": "arithmetic-rlvr-v2",
+    "datasetSha256": "5c6c3beb6242fd308a166cf92a766eafa7c8a4aa89877e71ba4d307e078c8ca0",
+    "evaluationRows": 4,
+    "generationsPerEvaluationSample": 4,
+    "optimizerSteps": 4,
+    "observedGradientNorms": [
+      12.424033164978027, 13.468205451965332, 0.0008973819785751402, 0.0007242434658110142
+    ],
+    "trainingVerifierPassRate": 0.25,
+    "evaluationBeforePassRate": 0.5,
+    "evaluationAfterPassRate": 0.4375,
+    "evaluationPassRateDelta": -0.0625,
+    "independentlyReloaded": true,
+    "resumeFromStep": 2,
+    "resumeMaximumParameterError": 0.0,
+    "resumeTolerance": {
+      "absolute": 1e-6,
+      "relative": 1e-5
+    },
+    "artifactSha256": {
+      "summary": "630e7944544c08e82f4b74e9971d3994b4fe79a0483e8438084b1ecd76e3ecde",
+      "evaluation": "730638d258fcc3b1e323d0f85c6ca68709478ac34da73b333d2d66ce4e5d5164",
+      "replay": "44ae94023fa13740443d47d78947fb94e10be35094e037af2013254604a888e2",
+      "adapter": "916028f2ae466ee51c5e0f31d6bc4cf4c2c371167eef41c0022b846f3d68e64b"
+    },
+    "claim": "Observed negative held-out change in one small run; not statistically defensible evidence of improvement or degradation."
+  },
+  "independentDataSeedRegression": {
+    "trainingSeed": 7,
+    "originalDataSeed": 7,
+    "changedDataSeed": 19,
+    "trlGpuMaximumParameterDifference": {
+      "sft": 0.025745326653122902,
+      "dpo": 0.02947869896888733
+    },
+    "assertion": "Changing only the data seed changes learned adapter weights; exact continuation still matches within each declared seed set."
+  }
+}

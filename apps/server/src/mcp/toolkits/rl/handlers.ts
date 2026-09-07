@@ -8,6 +8,8 @@ import * as ServerConfig from "../../../config.ts";
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as Artifacts from "../../../rl/Artifacts.ts";
 import * as RlManager from "../../../rl/Manager.ts";
+import * as RlEvidence from "../../../rl/EvidenceBundle.ts";
+import { evidenceExportPath } from "../../../rl/EvidencePaths.ts";
 import * as RunStore from "../../../rl/RunStore.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { queryMetrics, summarizeMetrics } from "./analysis.ts";
@@ -224,6 +226,65 @@ const readArtifact = Effect.fn("RlToolkit.readArtifact")(function* (input: {
 });
 
 const handlers = {
+  rl_export_evidence: (input) =>
+    Effect.gen(function* () {
+      const context = yield* projectContext();
+      const result = yield* RlEvidence.exportEvidence({
+        ...input,
+        projectId: context.projectId,
+      }).pipe(
+        Effect.mapError(
+          (error) => new RlAgentToolError({ code: "operation-failed", detail: error.detail }),
+        ),
+      );
+      const config = yield* ServerConfig.ServerConfig;
+      const archivePath = evidenceExportPath({
+        rlRunsDir: config.rlRunsDir,
+        projectId: context.projectId,
+        exportId: result.exportId,
+      });
+      if (archivePath === null)
+        return yield* new RlAgentToolError({
+          code: "operation-failed",
+          detail: "Export archive path is invalid.",
+        });
+      return {
+        ...context,
+        export: result,
+        archivePath,
+        resource: {
+          _tag: "rl-evidence" as const,
+          projectId: context.projectId,
+          exportId: result.exportId,
+        },
+      };
+    }),
+  rl_record_research: ({ record }) =>
+    Effect.gen(function* () {
+      const context = yield* projectContext();
+      const result = yield* RlEvidence.recordResearch({
+        ...record,
+        projectId: context.projectId,
+      }).pipe(
+        Effect.mapError(
+          (error) => new RlAgentToolError({ code: "operation-failed", detail: error.detail }),
+        ),
+      );
+      return { ...context, record: result };
+    }),
+  rl_get_research_record: ({ recordId }) =>
+    Effect.gen(function* () {
+      const context = yield* projectContext();
+      const record = yield* RlEvidence.getResearchRecord({
+        projectId: context.projectId,
+        recordId,
+      }).pipe(
+        Effect.mapError(
+          (error) => new RlAgentToolError({ code: "operation-failed", detail: error.detail }),
+        ),
+      );
+      return { ...context, record };
+    }),
   rl_capabilities: () =>
     Effect.gen(function* () {
       const context = yield* projectContext();
